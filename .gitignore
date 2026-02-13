@@ -39,3 +39,19 @@
 
 # debug information files
 *.dwo
+
+# Embedded / Pico SDK
+build/
+cmake-build-*/
+*.uf2
+*.bin
+*.elf
+*.map
+Dependencies/
+
+# PlatformIO
+.pio/
+
+# Python
+*.pyc
+__pycache__/
