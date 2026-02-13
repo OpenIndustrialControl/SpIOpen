@@ -3,5 +3,6 @@
 add_library(spiopen_protocol STATIC
     crc32.c
     dlc_hamming.c
+    chain_tx_frame.c
 )
 target_include_directories(spiopen_protocol PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

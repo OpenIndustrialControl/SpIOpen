@@ -18,7 +18,7 @@ Short summary of the phased approach. Full architecture: [Architecture.md](Archi
 **Electrical:**
 
 - **Output:** One native SPI in master mode (CLK + MOSI, DMA). Feeds both inputs in loopback.
-- **Input 1 – MOSI Drop Bus (PIO):** CLK + MOSI, drop format (no TTL). Mock/empty handler.
+- **Input 1 – MOSI Drop Bus (PIO):** CLK + MOSI, same frame format as chain (preamble, TTL, CID+flags, DLC, data, CRC). Mock/empty handler.
 - **Input 2 – Chain (PIO):** CLK + MOSI, chain format (with TTL). Decrement TTL, retransmit out same SPI output.
 
 **Pin assignments (RP2040 XIAO, loopback only):**

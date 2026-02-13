@@ -53,10 +53,10 @@ We chose a single-master, multiple-slave daisy-chain topology over pure multi-dr
 - **Direction**: Slaves transmit only to next slave or master.  
 - **Electrical**: Short segments (few cm), single-ended 3.3 V initially.  
 - **Speed**: Same 10 MHz target.  
-- **TTL field**: Every frame carries an 8-bit TTL byte (right after preamble).  
-  - Originating slave sets TTL to configured value (default 127).  
-  - Each forwarding slave decrements TTL.  
-  - If TTL reaches 0 → frame is dropped (loop protection, probably unnecessary).  
+- **TTL field**: Every frame (on both buses) carries an 8-bit TTL byte (byte 1).  
+  - On the chain: originating slave sets TTL (e.g. 127); each forwarding slave decrements TTL.  
+  - If TTL reaches 0 → frame is dropped (loop protection).  
+  - On the drop bus: master sets TTL (same header layout for DMA simplicity).  
 - **Hot-swap / bypass**:  
   - v1: Manual “empty slot cover” jumper card (straight-through traces for CLK/MOSI). Will break the bus when swapped, but probably allows "live swap" during pre-op states.  
   - v2+: Automatic bypass circuit (sense pin + MOSFET or relay + watchdog) prepared but not populated in v1.  
@@ -64,7 +64,7 @@ We chose a single-master, multiple-slave daisy-chain topology over pure multi-dr
 
 **Why these two buses**  
 - MOSI Drop Bus: Simplest way to reach all nodes simultaneously (broadcast SYNC, NMT, SDO requests).  
-- MISO Chain Bus: Enables physical topology detection (TTL value = distance from master), fault localization, and cumulative responses if desired later.  Latency suffers, but is usually not critical from slaves acting on a SYNC signal or internal timer.
+- MISO Chain Bus: Enables physical topology detection (TTL value = distance from master), fault localization, and cumulative responses if desired. Same frame format on both buses keeps DMA and parsing simple.
 - Together: High bandwidth, low cost, and topology awareness without EtherCAT hardware overhead.
 
 ## 3. Slave Expectations – Logical & Electrical
@@ -114,54 +114,36 @@ We chose a single-master, multiple-slave daisy-chain topology over pure multi-dr
 - Strong buffering (74LVC245 or similar) on MOSI Drop Bus lines.  
 - Termination (100 Ω) and pull-downs (if needed) placed on the last baseplate/slot.
 
-## 5. Frame Formats
+## 5. Frame Format (Unified – Both Buses)
+
+The same frame layout is used on **MOSI Drop Bus** (master → slaves) and **MISO Chain Bus** (slaves → master). A fixed 5-byte header simplifies DMA and parsing.
 
 ### Common Elements
 - **Preamble**: 0xAA (1 byte)  
-  - Chosen over 0x5A because it has more transitions (10101010 vs 01011010) → better clock recovery and sync detection.  
-- **CRC-32**: IEEE 802.3 polynomial, 4 bytes, appended at end  
-- **DLC**: 0–64 bytes (CAN-FD compatible), Hamming(8,4) SECDED encoded (1 byte)  
-- **ID reconstruction**: Big-endian, matches CAN frame order (MSB first)
+  - Chosen for more transitions (10101010) → better clock recovery and sync detection.  
+- **CRC-32**: IEEE 802.3 polynomial, 4 bytes, appended at end.  
+- **DLC**: 0–64 bytes (CAN-FD compatible), Hamming(8,4) SECDED encoded as one byte (4-bit DLC in 8-bit encoded form).  
+- **CID**: 11-bit CANopen COB-ID only (no extended CAN IDs). Matches 7-bit Node ID semantics (function code in high bits, node in low 7).
 
-### MOSI Drop Bus Frame (Master → Slaves)
-- Byte 0:     Preamble (0xAA)
-- Byte 1:     Base ID
-  - Bits 7–1: Node ID [6:0] (7 bits, 1–127)
-  - Bit 0:    Extension flag (0 = short, 1 = extended)
-[If extension flag == 1]
-- Bytes 2–3:  Extension ID (16 bits, big-endian)
-- Byte 4 (or 2 if no ext): Flags (1 byte)
-  - Bit 7–3: Reserved (0)
-  - Bit 2:   Reserved (future)
-  - Bit 1:   FDF (1 = FD format / 64-byte capable)
-  - Bit 0:   BRS (1 = bit rate switch requested – implied on)
-- Byte 5 (or 3): DLC (1 byte, Hamming-encoded)
-- Bytes 6–N (or 4–N): Data (0–64 bytes)
-- Bytes N+1–N+4: CRC-32
-**Typical size**: 6–70 bytes
+### Frame Layout (Drop Bus and Chain Bus)
+- **Byte 0**: Preamble (0xAA)
+- **Byte 1**: TTL (time to live, 8 bits). Decremented before retransmit on the chain; on the drop bus the master sets it (e.g. for consistency or future use).
+- **Bytes 2–3**: 11-bit CID + 5 flag bits (16 bits total, big-endian).  
+  - Bits 0–10: 11-bit COB-ID (CiA 301).  
+  - Bits 11–15: 5 protocol flags (reserved / FDF / BRS etc. for future use).  
+  - Byte 2 = high 8 bits; byte 3 = low 8 bits.
+- **Byte 4**: DLC (1 byte, Hamming-encoded 4-bit data length code).
+- **Bytes 5–(4+N)**: Data, 0–64 bytes (length given by DLC).
+- **Bytes (5+N)–(8+N)**: CRC-32 (4 bytes).
 
-### MISO Chain Bus Frame (Slave → Master)
-- Byte 0:     Preamble (0xAA)
-- Byte 1:     TTL (8 bits – decrementing, drop if 0)
-- Byte 2:     Base ID
-  - Bits 7–1: Node ID [6:0]
-  - Bit 0:    Extension flag
-[If extension flag == 1]
-- Bytes 3–4:  Extension ID (16 bits, big-endian)
-- Byte 5 (or 3): Flags (1 byte – same as above)
-- Byte 6 (or 4): DLC (1 byte, Hamming-encoded)
-- Bytes 7–N (or 5–N): Data (0–64 bytes)
-- Bytes N+1–N+4: CRC-32
-**Typical size**: 7–71 bytes
+**Header size**: always 5 bytes. **Total frame**: 5 + data_len + 4 = 9–73 bytes.
 
 **Why this format**  
-- Minimal overhead 
-- Variable-length ID saves 3 bytes in common case (7-bit node IDs sufficient)  
-- Big-endian ID packing matches CAN frame order → seamless CANopenNode integration  
-- TTL only upstream → chain traversal awareness without bloating broadcast  
-- Hamming-protected DLC → robust to 1-bit errors, detects 2-bit  
-- CRC-32 → strong error detection, hardware-accelerated on many MCUs
-- Flag bits for compatability with CAN and CAN-FD to allow frame tunnelling to a future bus-adapter device.
+- Single header size on both buses → predictable DMA transfer lengths.  
+- 11-bit CID only → no extended CAN IDs; aligns with 7-bit CANopen Node ID.  
+- TTL on both buses → consistent layout; chain slaves decrement TTL when forwarding.  
+- Hamming-protected DLC → robust to 1-bit errors, detects 2-bit.  
+- CRC-32 → strong error detection, hardware-accelerated on many MCUs.
 
 ## Rationale Summary – Why This Architecture?
 

@@ -1,6 +1,6 @@
 /**
  * CRC-32 (IEEE 802.3) for SpIOpen frames.
- * Used by drop RX and other ports for software verification; chain TX uses
+ * Used by dropbus RX and other ports for software verification; chainbus TX uses
  * the single RP2040 DMA sniffer for hardware CRC.
  */
 #include "spiopen_protocol.h"
@@ -40,4 +40,13 @@ uint32_t spiopen_crc32(const uint8_t *data, size_t len)
         crc = (crc >> 8) ^ s_crc32_table[(crc ^ (uint32_t)byte) & 0xFFu];
     }
     return crc ^ 0xFFFFFFFFu;
+}
+
+void spiopen_append_crc32(uint8_t *buf, size_t len)
+{
+    uint32_t crc = spiopen_crc32(buf, len);
+    buf[len + 0] = (uint8_t)(crc >> 24);
+    buf[len + 1] = (uint8_t)(crc >> 16);
+    buf[len + 2] = (uint8_t)(crc >> 8);
+    buf[len + 3] = (uint8_t)(crc & 0xFFu);
 }

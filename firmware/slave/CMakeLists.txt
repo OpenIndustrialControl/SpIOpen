@@ -20,8 +20,9 @@ add_subdirectory(${FREERTOS_KERNEL_PATH}/portable/ThirdParty/GCC/RP2040 ${CMAKE_
 # SpIOpen protocol library
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../lib/spiopen_protocol ${CMAKE_BINARY_DIR}/spiopen_protocol)
 
-add_executable(spiopen_slave main.c frame_pool.c bus_queues.c chain_tx_spi.c drop_rx.c)
-pico_generate_pio_header(spiopen_slave ${CMAKE_CURRENT_SOURCE_DIR}/drop_rx_pio.pio)
+add_executable(spiopen_slave main.c frame_pool.c bus_queues.c bus_rx_pio.c chainbus_tx_spi.c chainbus_rx.c dropbus_rx.c)
+pico_enable_stdio_usb(spiopen_slave 1)
+pico_generate_pio_header(spiopen_slave ${CMAKE_CURRENT_SOURCE_DIR}/bus_rx_pio.pio)
 target_link_libraries(spiopen_slave
   pico_stdlib
   hardware_spi

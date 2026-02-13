@@ -8,7 +8,7 @@
 #include <stdint.h>
 #include "FreeRTOS.h"
 
-/* Max frame length: chain format 7 + 64 + 4 = 75; round up for alignment. */
+/* Max frame length: chainbus format 7 + 64 + 4 = 75; round up for alignment. */
 #define SPIOPEN_FRAME_BUF_SIZE  80
 
 #define FRAME_POOL_SIZE         16

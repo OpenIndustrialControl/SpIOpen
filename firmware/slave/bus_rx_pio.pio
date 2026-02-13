@@ -1,16 +1,17 @@
 /**
- * PIO SPI slave – drop bus RX with preamble sync.
- * Mode 0: sample on rising edge, MSB first. Pin 0 = CLK, Pin 1 = MOSI.
+ * PIO SPI slave – shared bus RX (dropbus and chainbus) with preamble sync.
+ * Load once; run on two state machines with different pin sets (dropbus CLK/MOSI, chainbus CLK/MOSI).
+ * Mode 0: sample on rising edge, MSB first. Pin 0 = CLK, Pin 1 = MOSI (relative to SM base).
  *
  * Flow: First "pull" loads 0xAA into Y (CPU pushes 0xAA to SM TX at init).
  * Sync loop: read one byte (8 bits from MOSI); if not equal to Y, discard and repeat.
  * When byte == 0xAA, push it and run frame_loop: read bytes and push to RX FIFO.
- * DMA (in C) reads from this RX FIFO into memory; PIO only does sync + shift.
+ * DMA (in C) reads from this RX FIFO; PIO only does sync + shift.
  */
-.program drop_rx_spi_slave
+.program spiopen_bus_rx
 
 ; ---- Sync: wait for preamble 0xAA ----
-    pull              ; get 0xAA from TX FIFO (CPU pushes at init)
+    pull
     mov y, osr
 sync_loop:
     set x, 7
@@ -23,9 +24,8 @@ sync_bit:
     in pins, 1
     mov x, osr
     jmp x!=y, sync_loop
-    push              ; push preamble, then fall through to frame_loop
+    push
 
-; ---- Frame: push every byte to RX FIFO (wrap only here so we don't re-sync) ----
 .wrap_target
 frame_loop:
     set x, 7

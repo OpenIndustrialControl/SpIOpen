@@ -24,6 +24,29 @@ uint8_t spiopen_dlc_to_byte_count(uint8_t dlc_raw)
     return s_dlc_to_bytes[dlc_raw];
 }
 
+uint8_t spiopen_byte_count_to_dlc_raw(size_t byte_count)
+{
+    switch (byte_count) {
+        case 0:  return 0;
+        case 1:  return 1;
+        case 2:  return 2;
+        case 3:  return 3;
+        case 4:  return 4;
+        case 5:  return 5;
+        case 6:  return 6;
+        case 7:  return 7;
+        case 8:  return 8;
+        case 12: return 9;
+        case 16: return 10;
+        case 20: return 11;
+        case 24: return 12;
+        case 32: return 13;
+        case 48: return 14;
+        case 64: return 15;
+        default: return 0xFF;
+    }
+}
+
 /* Parity groups (even parity). Bit indices 0..7. */
 #define B(c, i)  (((c) >> (i)) & 1u)
 #define S1(c)    (B(c,0) ^ B(c,2) ^ B(c,4) ^ B(c,6))
