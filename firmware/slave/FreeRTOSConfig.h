@@ -31,8 +31,12 @@
 
 #define configNUMBER_OF_CORES                   1
 
-#define configASSERT(x)                         do { if (!(x)) { portDISABLE_INTERRUPTS(); for (;;); } } while (0)
-#define configUSE_MALLOC_FAILED_HOOK            0
+/* Assert: print to serial then hang. Implement vAssertCalled() in main.c. */
+extern void vAssertCalled(const char *file, int line);
+#define configASSERT(x)                         do { if (!(x)) { vAssertCalled(__FILE__, __LINE__); } } while (0)
+
+#define configUSE_MALLOC_FAILED_HOOK            1   /* vApplicationMallocFailedHook() in main.c */
+#define configCHECK_FOR_STACK_OVERFLOW          1   /* vApplicationStackOverflowHook() in main.c */
 #define configUSE_DAEMON_TASK_STARTUP_HOOK      0
 #define configUSE_IDLE_HOOK                     0
 #define configUSE_TICK_HOOK                     0

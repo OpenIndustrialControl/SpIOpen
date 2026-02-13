@@ -23,6 +23,7 @@
  * DMA_IRQ_1. We use one channel, so we enable/ack the correct IRQ by channel.
  */
 #include "chainbus_tx_spi.h"
+#include "dma_irq.h"
 #include "bus_queues.h"
 #include "frame_pool.h"
 #include "spiopen_protocol.h"
@@ -30,7 +31,6 @@
 #include "semphr.h"
 #include "task.h"
 #include "hardware/spi.h"
-#include "hardware/dma.h"
 #include "hardware/irq.h"
 #include "pico/stdlib.h"
 #include <stdbool.h>
@@ -39,60 +39,27 @@
 /* Chainbus output pins per README / DevelopmentPlan */
 #define CHAINBUS_TX_SPI_CLK_PIN   2
 #define CHAINBUS_TX_SPI_MOSI_PIN  3
-#define CHAINBUS_TX_SPI_BAUD_HZ   (10u * 1000 * 1000)
+#define CHAINBUS_TX_SPI_BAUD_HZ   (100u * 1000)  /* 100 kHz for Phase 1 test */
 
 #define TX_TASK_STACK_SIZE     (configMINIMAL_STACK_SIZE * 2)
 #define TX_TASK_PRIORITY       (tskIDLE_PRIORITY + 2)
-
-/**
- * RP2040: channels 0–3 use DMA_IRQ_0; channels 4–7 use DMA_IRQ_1.
- */
-#define DMA_IRQ0_CHANNEL_MAX   3u
-
-#define DMA_CH_GET_IRQ_STATUS(ch) \
-    ((ch) <= DMA_IRQ0_CHANNEL_MAX ? dma_channel_get_irq0_status(ch) : dma_channel_get_irq1_status(ch))
-
-#define DMA_CH_ACK_IRQ(ch) \
-    do { \
-        if ((ch) <= DMA_IRQ0_CHANNEL_MAX) \
-            dma_channel_acknowledge_irq0(ch); \
-        else \
-            dma_channel_acknowledge_irq1(ch); \
-    } while (0)
-
-#define DMA_CH_SET_IRQ_ENABLED(ch, en) \
-    do { \
-        if ((ch) <= DMA_IRQ0_CHANNEL_MAX) \
-            dma_channel_set_irq0_enabled(ch, en); \
-        else \
-            dma_channel_set_irq1_enabled(ch, en); \
-    } while (0)
 
 static spi_inst_t *const s_spi = spi0;
 static uint s_dma_ch;
 static SemaphoreHandle_t s_tx_done_sem;
 static volatile uint8_t *s_current_tx_buf;
 
-/**
- * DMA completion: ack IRQ, read/disable sniffer, return buffer, give semaphore.
- */
-static void dma_irq_handler(void)
+/** Per-channel callback: dispatcher already confirmed this channel fired; we do work only (dispatcher acks). */
+static void chainbus_tx_dma_cb(void)
 {
     BaseType_t woken = pdFALSE;
-    bool hit = DMA_CH_GET_IRQ_STATUS(s_dma_ch);
-
-    if (hit) {
-        DMA_CH_ACK_IRQ(s_dma_ch);
-        /* Sniffer ran on this channel; read CRC residue and disable (sniffer is global). */
-        (void)dma_sniffer_get_data_accumulator();  /* optional: check == SPIOPEN_CRC32_RESIDUE */
-        dma_sniffer_disable();
-        if (s_current_tx_buf != NULL) {
-            frame_pool_put((uint8_t *)s_current_tx_buf);
-            s_current_tx_buf = NULL;
-        }
-        xSemaphoreGiveFromISR(s_tx_done_sem, &woken);
+    (void)dma_sniffer_get_data_accumulator();
+    dma_sniffer_disable();
+    if (s_current_tx_buf != NULL) {
+        frame_pool_put((uint8_t *)s_current_tx_buf);
+        s_current_tx_buf = NULL;
     }
-
+    xSemaphoreGiveFromISR(s_tx_done_sem, &woken);
     portYIELD_FROM_ISR(woken);
 }
 
@@ -121,36 +88,36 @@ static void chainbus_tx_task(void *pvParameters)
 
 void chainbus_tx_spi_init(void)
 {
+    configASSERT(s_spi != NULL);
+    configASSERT(CHAINBUS_TX_SPI_BAUD_HZ > 0u);
+    configASSERT(TX_TASK_STACK_SIZE > 0u);
+
     spi_init(s_spi, CHAINBUS_TX_SPI_BAUD_HZ);
     gpio_set_function(CHAINBUS_TX_SPI_CLK_PIN, GPIO_FUNC_SPI);
     gpio_set_function(CHAINBUS_TX_SPI_MOSI_PIN, GPIO_FUNC_SPI);
-    /* Master, mode 0, 8-bit; MOSI only (no MISO for chainbus out). */
     spi_set_format(s_spi, 8, SPI_CPOL_0, SPI_CPHA_0, SPI_MSB_FIRST);
 
     s_dma_ch = dma_claim_unused_channel(true);
+    configASSERT((int)s_dma_ch >= 0 && s_dma_ch < NUM_DMA_CHANNELS);
+
     {
         dma_channel_config dc = dma_channel_get_default_config(s_dma_ch);
         channel_config_set_transfer_data_size(&dc, DMA_SIZE_8);
         channel_config_set_read_increment(&dc, true);
         channel_config_set_write_increment(&dc, false);
-        channel_config_set_dreq(&dc, spi_get_dreq(s_spi, true));  /* true = TX */
+        channel_config_set_dreq(&dc, spi_get_dreq(s_spi, true));
         dma_channel_configure(s_dma_ch, &dc,
-            (void *)&spi_get_hw(s_spi)->dr,  /* write to SPI TX FIFO */
+            (void *)&spi_get_hw(s_spi)->dr,
             NULL, 0, false);
     }
 
-    irq_add_shared_handler(DMA_IRQ_0, dma_irq_handler, 0);
-    irq_set_enabled(DMA_IRQ_0, true);
-    if (s_dma_ch > DMA_IRQ0_CHANNEL_MAX) {
-        irq_add_shared_handler(DMA_IRQ_1, dma_irq_handler, 0);
-        irq_set_enabled(DMA_IRQ_1, true);
-    }
-
-    DMA_CH_SET_IRQ_ENABLED(s_dma_ch, true);
+    spiopen_dma_register_channel_callback(s_dma_ch, chainbus_tx_dma_cb);
+    SPIOPEN_DMA_CH_SET_IRQ_ENABLED(s_dma_ch, true);
 
     s_tx_done_sem = xSemaphoreCreateBinary();
     configASSERT(s_tx_done_sem != NULL);
     s_current_tx_buf = NULL;
 
-    xTaskCreate(chainbus_tx_task, "chainbus_tx", TX_TASK_STACK_SIZE, NULL, TX_TASK_PRIORITY, NULL);
+    BaseType_t task_ok = xTaskCreate(chainbus_tx_task, "chainbus_tx", TX_TASK_STACK_SIZE, NULL, TX_TASK_PRIORITY, NULL);
+    configASSERT(task_ok == pdPASS);
 }

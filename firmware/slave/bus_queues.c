@@ -10,10 +10,16 @@ static QueueHandle_t s_chainbus_tx_queue;
 
 void bus_queues_init(void)
 {
-    s_dropbus_rx_queue  = xQueueCreate(BUS_QUEUE_DEPTH, sizeof(spiopen_frame_desc_t));
+    configASSERT(BUS_QUEUE_DEPTH > 0u);
+
+    s_dropbus_rx_queue = xQueueCreate(BUS_QUEUE_DEPTH, sizeof(spiopen_frame_desc_t));
+    configASSERT(s_dropbus_rx_queue != NULL);
+
     s_chainbus_rx_queue = xQueueCreate(BUS_QUEUE_DEPTH, sizeof(spiopen_frame_desc_t));
+    configASSERT(s_chainbus_rx_queue != NULL);
+
     s_chainbus_tx_queue = xQueueCreate(BUS_QUEUE_DEPTH, sizeof(spiopen_frame_desc_t));
-    configASSERT(s_dropbus_rx_queue != NULL && s_chainbus_rx_queue != NULL && s_chainbus_tx_queue != NULL);
+    configASSERT(s_chainbus_tx_queue != NULL);
 }
 
 void send_to_dropbus_rx_from_isr(uint8_t *buf, uint8_t len, BaseType_t *pxHigherPriorityTaskWoken)

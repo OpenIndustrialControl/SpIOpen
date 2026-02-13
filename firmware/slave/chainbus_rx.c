@@ -7,6 +7,7 @@
 #include "chainbus_rx.h"
 #include "bus_rx_pio.h"
 #include "bus_queues.h"
+#include "dma_irq.h"
 #include "frame_pool.h"
 #include "spiopen_protocol.h"
 #include "FreeRTOS.h"
@@ -22,6 +23,8 @@
 #define CHAINBUS_RX_HEADER_LEN    SPIOPEN_HEADER_LEN   /* 5: preamble, TTL, CID+flags (2), DLC */
 #define CHAINBUS_RX_HEADER_WORDS  5
 #define CHAINBUS_RX_BODY_STAGE_MAX  (SPIOPEN_FRAME_BUF_SIZE - CHAINBUS_RX_HEADER_LEN)
+
+#define NUM_PIO_SM  4u
 
 #define CHAINBUS_RX_TASK_STACK_SIZE  (configMINIMAL_STACK_SIZE * 3)
 #define CHAINBUS_RX_TASK_PRIORITY   (tskIDLE_PRIORITY + 2)
@@ -71,44 +74,37 @@ static void chainbus_rx_unpack_body(uint8_t *buf, uint8_t body_len)
         buf[CHAINBUS_RX_HEADER_LEN + i] = (uint8_t)(s_chainbus_rx_body_stage[i] & 0xFFu);
 }
 
-#define CHAINBUS_RX_DMA_IRQ_STATUS(ch) \
-    ((ch) <= 3u ? dma_channel_get_irq0_status(ch) : dma_channel_get_irq1_status(ch))
-#define CHAINBUS_RX_DMA_IRQ_ACK(ch) \
-    do { if ((ch) <= 3u) dma_channel_acknowledge_irq0(ch); else dma_channel_acknowledge_irq1(ch); } while (0)
-
-static void chainbus_rx_dma_irq_handler(void)
+/** Per-channel callbacks: dispatcher acks; we only do work. */
+static void chainbus_rx_header_cb(void)
 {
     BaseType_t woken = pdFALSE;
-
-    if (CHAINBUS_RX_DMA_IRQ_STATUS(s_dma_ch_header)) {
-        CHAINBUS_RX_DMA_IRQ_ACK(s_dma_ch_header);
-        chainbus_rx_unpack_header(s_chainbus_rx_buf);
-        s_chainbus_rx_frame_len = chainbus_rx_frame_len_from_header(s_chainbus_rx_buf);
-        if (s_chainbus_rx_frame_len == 0) {
-            frame_pool_put(s_chainbus_rx_buf);
-            s_chainbus_rx_buf = NULL;
-            xSemaphoreGiveFromISR(s_chainbus_rx_done_sem, &woken);
-        } else {
-            uint32_t body_words = (uint32_t)(s_chainbus_rx_frame_len - CHAINBUS_RX_HEADER_LEN);
-            dma_channel_set_read_addr(s_dma_ch_body, (void *)&pio0_hw->rxf[s_sm], false);
-            dma_channel_set_write_addr(s_dma_ch_body, s_chainbus_rx_body_stage, false);
-            dma_channel_set_trans_count(s_dma_ch_body, body_words, true);
-        }
-    }
-
-    if (CHAINBUS_RX_DMA_IRQ_STATUS(s_dma_ch_body)) {
-        CHAINBUS_RX_DMA_IRQ_ACK(s_dma_ch_body);
-        if (s_chainbus_rx_buf != NULL && s_chainbus_rx_frame_len != 0) {
-            chainbus_rx_unpack_body(s_chainbus_rx_buf, (uint8_t)(s_chainbus_rx_frame_len - CHAINBUS_RX_HEADER_LEN));
-            if (spiopen_crc32_verify_frame(s_chainbus_rx_buf, (size_t)s_chainbus_rx_frame_len))
-                send_to_chainbus_rx_from_isr(s_chainbus_rx_buf, s_chainbus_rx_frame_len, &woken);
-            else
-                frame_pool_put(s_chainbus_rx_buf);
-            s_chainbus_rx_buf = NULL;
-        }
+    chainbus_rx_unpack_header(s_chainbus_rx_buf);
+    s_chainbus_rx_frame_len = chainbus_rx_frame_len_from_header(s_chainbus_rx_buf);
+    if (s_chainbus_rx_frame_len == 0) {
+        frame_pool_put(s_chainbus_rx_buf);
+        s_chainbus_rx_buf = NULL;
         xSemaphoreGiveFromISR(s_chainbus_rx_done_sem, &woken);
+    } else {
+        uint32_t body_words = (uint32_t)(s_chainbus_rx_frame_len - CHAINBUS_RX_HEADER_LEN);
+        dma_channel_set_read_addr(s_dma_ch_body, (void *)&pio0_hw->rxf[s_sm], false);
+        dma_channel_set_write_addr(s_dma_ch_body, s_chainbus_rx_body_stage, false);
+        dma_channel_set_trans_count(s_dma_ch_body, body_words, true);
     }
+    portYIELD_FROM_ISR(woken);
+}
 
+static void chainbus_rx_body_cb(void)
+{
+    BaseType_t woken = pdFALSE;
+    if (s_chainbus_rx_buf != NULL && s_chainbus_rx_frame_len != 0) {
+        chainbus_rx_unpack_body(s_chainbus_rx_buf, (uint8_t)(s_chainbus_rx_frame_len - CHAINBUS_RX_HEADER_LEN));
+        if (spiopen_crc32_verify_frame(s_chainbus_rx_buf, (size_t)s_chainbus_rx_frame_len))
+            send_to_chainbus_rx_from_isr(s_chainbus_rx_buf, s_chainbus_rx_frame_len, &woken);
+        else
+            frame_pool_put(s_chainbus_rx_buf);
+        s_chainbus_rx_buf = NULL;
+    }
+    xSemaphoreGiveFromISR(s_chainbus_rx_done_sem, &woken);
     portYIELD_FROM_ISR(woken);
 }
 
@@ -136,9 +132,19 @@ static void chainbus_rx_task(void *pvParameters)
 void chainbus_rx_init(void)
 {
     bus_rx_pio_get_chainbus(&s_pio, &s_sm);
+    configASSERT(s_pio != NULL);
+    configASSERT(s_sm < NUM_PIO_SM);
+
+    s_chainbus_rx_done_sem = xSemaphoreCreateBinary();
+    configASSERT(s_chainbus_rx_done_sem != NULL);
+    s_chainbus_rx_buf = NULL;
+    s_chainbus_rx_frame_len = 0;
 
     s_dma_ch_header = dma_claim_unused_channel(true);
     s_dma_ch_body = dma_claim_unused_channel(true);
+    configASSERT((int)s_dma_ch_header >= 0 && s_dma_ch_header < NUM_DMA_CHANNELS);
+    configASSERT((int)s_dma_ch_body >= 0 && s_dma_ch_body < NUM_DMA_CHANNELS);
+    configASSERT(s_dma_ch_header != s_dma_ch_body);
 
     const uint dreq_rx = pio_get_dreq(s_pio, s_sm, false);
     for (int i = 0; i < 2; i++) {
@@ -149,22 +155,11 @@ void chainbus_rx_init(void)
         channel_config_set_write_increment(&dc, true);
         channel_config_set_dreq(&dc, dreq_rx);
         dma_channel_configure(ch, &dc, NULL, NULL, 0, false);
-        if (ch <= 3u)
-            dma_channel_set_irq0_enabled(ch, true);
-        else
-            dma_channel_set_irq1_enabled(ch, true);
+        SPIOPEN_DMA_CH_SET_IRQ_ENABLED(ch, true);
     }
-    irq_add_shared_handler(DMA_IRQ_0, chainbus_rx_dma_irq_handler, 0);
-    irq_set_enabled(DMA_IRQ_0, true);
-    if (s_dma_ch_header > 3u || s_dma_ch_body > 3u) {
-        irq_add_shared_handler(DMA_IRQ_1, chainbus_rx_dma_irq_handler, 0);
-        irq_set_enabled(DMA_IRQ_1, true);
-    }
+    spiopen_dma_register_channel_callback(s_dma_ch_header, chainbus_rx_header_cb);
+    spiopen_dma_register_channel_callback(s_dma_ch_body, chainbus_rx_body_cb);
 
-    s_chainbus_rx_done_sem = xSemaphoreCreateBinary();
-    configASSERT(s_chainbus_rx_done_sem != NULL);
-    s_chainbus_rx_buf = NULL;
-    s_chainbus_rx_frame_len = 0;
-
-    xTaskCreate(chainbus_rx_task, "chainbus_rx", CHAINBUS_RX_TASK_STACK_SIZE, NULL, CHAINBUS_RX_TASK_PRIORITY, NULL);
+    BaseType_t task_ok = xTaskCreate(chainbus_rx_task, "chainbus_rx", CHAINBUS_RX_TASK_STACK_SIZE, NULL, CHAINBUS_RX_TASK_PRIORITY, NULL);
+    configASSERT(task_ok == pdPASS);
 }

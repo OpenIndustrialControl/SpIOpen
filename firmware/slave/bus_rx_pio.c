@@ -4,6 +4,7 @@
  */
 #include "bus_rx_pio.h"
 #include "spiopen_protocol.h"
+#include "FreeRTOS.h"
 #include "hardware/gpio.h"
 #include <stddef.h>
 
@@ -15,6 +16,9 @@
 #define CHAINBUS_CLK_GPIO  28
 #define CHAINBUS_MOSI_GPIO 29
 
+#define NUM_PIO_SM         4u
+#define PIO_GPIO_MAX       29u
+
 static PIO s_pio;
 static uint s_offset;
 static uint s_dropbus_sm;
@@ -22,6 +26,10 @@ static uint s_chainbus_sm;
 
 static void init_sm(uint sm, uint clk_gpio, uint mosi_gpio)
 {
+    configASSERT(sm < NUM_PIO_SM);
+    configASSERT(clk_gpio <= PIO_GPIO_MAX);
+    configASSERT(mosi_gpio <= PIO_GPIO_MAX);
+
     pio_sm_config c = spiopen_bus_rx_program_get_default_config(s_offset);
     sm_config_set_in_pins(&c, mosi_gpio);
     sm_config_set_set_pins(&c, clk_gpio, 1);
@@ -40,11 +48,19 @@ static void init_sm(uint sm, uint clk_gpio, uint mosi_gpio)
 
 void bus_rx_pio_init(void)
 {
+    configASSERT(pio0 != NULL);
+
     s_pio = pio0;
     s_offset = pio_add_program(s_pio, &spiopen_bus_rx_program);
+    configASSERT(s_offset < 32u);  /* PIO instruction memory size */
 
     s_dropbus_sm = pio_claim_unused_sm(s_pio, true);
+    configASSERT(s_dropbus_sm < NUM_PIO_SM);
+
     s_chainbus_sm = pio_claim_unused_sm(s_pio, true);
+    configASSERT(s_chainbus_sm < NUM_PIO_SM);
+    configASSERT(s_dropbus_sm != s_chainbus_sm);
+
     init_sm(s_dropbus_sm, DROPBUS_CLK_GPIO, DROPBUS_MOSI_GPIO);
     init_sm(s_chainbus_sm, CHAINBUS_CLK_GPIO, CHAINBUS_MOSI_GPIO);
 }

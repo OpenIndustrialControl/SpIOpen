@@ -16,6 +16,7 @@
 #include "frame_pool.h"
 #include "bus_queues.h"
 #include "bus_rx_pio.h"
+#include "dma_irq.h"
 #include "chainbus_tx_spi.h"
 #include "chainbus_rx.h"
 #include "dropbus_rx.h"
@@ -37,9 +38,46 @@ static void print_hex_payload(const uint8_t *buf, uint8_t len)
     printf("\r\n");
 }
 
+/* ----- FreeRTOS error hooks (output to USB serial) ----- */
+void vAssertCalled(const char *file, int line)
+{
+    printf("\r\n*** ASSERT %s:%d ***\r\n", file, line);
+    fflush(stdout);
+    portDISABLE_INTERRUPTS();
+    for (;;)
+        tight_loop_contents();
+}
+
+void vApplicationMallocFailedHook(void)
+{
+    printf("\r\n*** MALLOC FAILED ***\r\n");
+    fflush(stdout);
+    portDISABLE_INTERRUPTS();
+    for (;;)
+        tight_loop_contents();
+}
+
+void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
+{
+    (void)xTask;
+    printf("\r\n*** STACK OVERFLOW task %s ***\r\n", pcTaskName != NULL ? pcTaskName : "?");
+    fflush(stdout);
+    portDISABLE_INTERRUPTS();
+    for (;;)
+        tight_loop_contents();
+}
+
 /* Dev test: PDO1 node 1 = COB-ID 0x181 (function 3, node 1) */
 #define DEVTEST_FUNCTION_CODE  3u
 #define DEVTEST_NODE_ID       1u
+
+/** Drain stdin then block until one character is received (avoids bypass from buffered data). */
+static void wait_key(void)
+{
+    while (getchar_timeout_us(0) != PICO_ERROR_TIMEOUT)
+        ;
+    (void) getchar();
+}
 
 int main(void)
 {
@@ -48,18 +86,49 @@ int main(void)
     sleep_ms(1500);
 
     printf("\r\nSpIOpen slave (Phase 1)\r\n");
+    printf("Press any key to init...\r\n");
+    wait_key();
 
+    printf("init: frame_pool...\r\n");
     frame_pool_init();
+    printf("init: frame_pool ok\r\n");
+
+    printf("init: bus_queues...\r\n");
     bus_queues_init();
+    printf("init: bus_queues ok\r\n");
+
+    printf("init: dma_irq dispatcher...\r\n");
+    spiopen_dma_irq_dispatcher_init();
+    printf("init: dma_irq ok\r\n");
+
+    printf("init: chainbus_tx_spi...\r\n");
     chainbus_tx_spi_init();
+    printf("init: chainbus_tx_spi ok\r\n");
+
+    printf("init: bus_rx_pio...\r\n");
     bus_rx_pio_init();
+    printf("init: bus_rx_pio ok\r\n");
+
+    printf("init: chainbus_rx...\r\n");
     chainbus_rx_init();
+    printf("init: chainbus_rx ok\r\n");
+
+    printf("init: dropbus_rx...\r\n");
     dropbus_rx_init();
+    printf("init: dropbus_rx ok\r\n");
 
-    printf("PIO+DMA+queues ready. Type 0-9 to send PDO (TTL=digit), dropbus RX -> hex.\r\n\r\n");
+    printf("PIO+DMA+queues ready. Press any key to start tasks.\r\n");
+    wait_key();
 
+    printf("create: ttl task...\r\n");
     xTaskCreate(ttl_forward_task, "ttl", TTL_TASK_STACK_SIZE, NULL, TTL_TASK_PRIORITY, NULL);
+    printf("create: ttl task ok\r\n");
+
+    printf("create: app task...\r\n");
     xTaskCreate(app_task, "app", APP_TASK_STACK_SIZE, NULL, APP_TASK_PRIORITY, NULL);
+    printf("create: app task ok\r\n");
+
+    printf("starting scheduler...\r\n");
     vTaskStartScheduler();
 
     /* Should not reach here */
@@ -85,6 +154,7 @@ static void ttl_forward_task(void *pvParameters)
 
 static void app_task(void *pvParameters)
 {
+    printf("app task started\r\n");
     spiopen_frame_desc_t desc;
     (void)pvParameters;
     for (;;) {
@@ -93,22 +163,24 @@ static void app_task(void *pvParameters)
         if (c >= '0' && c <= '9') {
             uint8_t *buf = frame_pool_get();
             if (buf == NULL) {
-                printf("tx: no buffer\r\n");
+                printf("send failed: no buffer\r\n");
             } else {
                 uint8_t ttl = (uint8_t)(c - '0');
                 uint8_t payload_byte = (uint8_t)c;
                 size_t frame_len = spiopen_frame_build_std(buf, (size_t)SPIOPEN_FRAME_BUF_SIZE, ttl, DEVTEST_FUNCTION_CODE, DEVTEST_NODE_ID, &payload_byte, 1);
-                if (frame_len != 0 && send_to_chainbus_tx(buf, (uint8_t)frame_len, 0) == pdTRUE) {
-                    printf("tx TTL=%u len=%u\r\n", (unsigned)ttl, (unsigned)frame_len);
-                } else {
-                    if (frame_len == 0)
-                        printf("tx: build failed\r\n");
+                if (frame_len == 0) {
+                    printf("send failed: frame build failed\r\n");
                     frame_pool_put(buf);
+                } else if (send_to_chainbus_tx(buf, (uint8_t)frame_len, 0) != pdTRUE) {
+                    printf("send failed: tx busy or timeout\r\n");
+                    frame_pool_put(buf);
+                } else {
+                    printf("send ok: ");
+                    print_hex_payload(buf, (uint8_t)frame_len);
                 }
             }
         }
         if (receive_from_dropbus_rx(&desc, pdMS_TO_TICKS(10)) == pdTRUE) {
-            printf("dropbus %u: ", (unsigned)desc.len);
             print_hex_payload(desc.buf, desc.len);
             frame_pool_put(desc.buf);
         }

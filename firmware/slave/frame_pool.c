@@ -10,11 +10,17 @@ static QueueHandle_t s_free_queue;
 
 void frame_pool_init(void)
 {
+    configASSERT(FRAME_POOL_SIZE > 0u);
+    configASSERT(SPIOPEN_FRAME_BUF_SIZE > 0u);
+
     s_free_queue = xQueueCreate(FRAME_POOL_SIZE, sizeof(uint8_t *));
     configASSERT(s_free_queue != NULL);
+
     for (size_t i = 0; i < FRAME_POOL_SIZE; i++) {
         uint8_t *ptr = s_buffers[i];
-        xQueueSend(s_free_queue, &ptr, 0);
+        configASSERT(ptr != NULL);
+        BaseType_t ok = xQueueSend(s_free_queue, &ptr, 0);
+        configASSERT(ok == pdTRUE);
     }
 }
 
