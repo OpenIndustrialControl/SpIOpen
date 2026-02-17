@@ -1,41 +1,34 @@
 /**
  * PIO SPI slave – shared bus RX (dropbus and chainbus) with preamble sync.
- * Load once; run on two state machines with different pin sets (dropbus CLK/MOSI, chainbus CLK/MOSI).
- * Mode 0: sample on rising edge, MSB first. Pin 0 = CLK, Pin 1 = MOSI (relative to SM base).
+ * Load once; run on two state machines. PIO group: Pin 0 = MOSI (data), Pin 1 = CLK.
+ * Mode 0: sample on rising edge, MSB first. WAIT uses pin 1 (CLK); IN and JMP use pin 0 (MOSI).
  *
- * Flow: First "pull" loads 0xAA into Y (CPU pushes 0xAA to SM TX at init).
- * Sync loop: read one byte (8 bits from MOSI); if not equal to Y, discard and repeat.
- * When byte == 0xAA, push it and run frame_loop: read bytes and push to RX FIFO.
- * DMA (in C) reads from this RX FIFO; PIO only does sync + shift.
+ * Sync: watch for alternating pattern on MOSI that signals preamble (0xAA). Frame: shift 8 bits from MOSI into RX FIFO per byte; 8-bit DMA, no unpack in C.
+ * NOTE: Pin 0 (MOSI) must be set as EXECCTRL_JMP_PIN in SM setup.
  */
 .program spiopen_bus_rx
 
-; ---- Sync: wait for preamble 0xAA ----
-    pull
-    mov y, osr
-sync_loop:
-    set x, 7
-sync_bit:
-    wait 1 pin 0
-    in pins, 1
-    wait 0 pin 0
-    jmp x-- sync_bit
-    wait 1 pin 0
-    in pins, 1
-    mov x, osr
-    jmp x!=y, sync_loop
-    push
+; ---- Sync: wait for preamble 0xAA (10101010) on MOSI ----
+sync_restart:
+    set x, 3                    ; X = pulse counter for preamble (4 pulses in 0xAA)
+sync_expect_high:
+    wait 0 pin 1                ; wait for CLK (pin 1) low / bus idle
+    wait 1 pin 1                ; Wait for CLK rising edge; data valid on MOSI (pin 0)
+    jmp pin sync_after_high     ; Continue to sync pin count increment if data pin is hight
+    jmp sync_restart            ; Fault back to the beginning if data pin is not high (jmp pin = pin 0, MOSI)
+sync_after_high:
+    wait 0 pin 1                ; CLK low
+    wait 1 pin 1                ; CLK high; expect MOSI low after each 1
+    jmp pin sync_restart        ; MOSI high here => not our preamble
+    jmp x-- sync_expect_high    ; next pulse or fall into frame loop
 
 .wrap_target
 frame_loop:
-    set x, 7
+    set x, 7             ; Bit counter for 8 bits
 frame_bit:
-    wait 1 pin 0
-    in pins, 1
-    wait 0 pin 0
-    jmp x-- frame_bit
-    wait 1 pin 0
-    in pins, 1
-    push
-    jmp frame_loop
+    wait 0 pin 1         ; Wait for CLK low
+    wait 1 pin 1         ; Wait for CLK rising edge; data valid on MOSI
+    in pins, 1           ; Shift 1 bit from MOSI (pin 0) into ISR
+    jmp x-- frame_bit    ; After 8 bits, autopush sends byte to RX FIFO
+    jmp frame_loop       ; Next byte
 .wrap

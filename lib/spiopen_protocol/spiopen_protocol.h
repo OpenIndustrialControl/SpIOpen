@@ -10,15 +10,16 @@
 
 /* Frame layout (see docs/Architecture.md). Same on both drop bus and chain bus. */
 #define SPIOPEN_PREAMBLE      0xAAu
-#define SPIOPEN_HEADER_LEN    5   /* preamble, TTL, CID+flags (2), DLC */
+#define SPIOPEN_HEADER_LEN    4   /* TTL, CID+flags (2), DLC; preamble is not in frame buffer */
 #define SPIOPEN_CRC_BYTES     4
 #define SPIOPEN_MAX_PAYLOAD   64
 
 /**
- * When the last 4 bytes of a frame are the correct IEEE 802.3 CRC-32,
- * CRC(entire_frame) equals this residue. Use for software verification on
+ * When the last 4 bytes of a frame buffer are the correct IEEE 802.3 CRC-32,
+ * CRC(entire_frame_buffer) equals this residue. Frame buffer = [TTL, CID, DLC, data, CRC];
+ * preamble is not included in the buffer or in CRC. Use for software verification on
  * dropbus RX and other ports. Chainbus TX uses the single RP2040 DMA sniffer for
- * hardware CRC (full frame in one DMA).
+ * hardware CRC (buffer only, no preamble).
  */
 #define SPIOPEN_CRC32_RESIDUE  0xC704DD7Bu
 
@@ -76,8 +77,8 @@ static inline uint16_t spiopen_cid_from_command_node(uint8_t command_4bit, uint8
 /* ----- Frame build (unified format: drop bus and chain bus) ----- */
 
 /**
- * Build a SpIOpen frame into buf (preamble, TTL, 11-bit CID + 5 flags, DLC, data, CRC).
- * Same format on both MOSI Drop Bus and MISO Chain Bus; header is always 5 bytes.
+ * Build a SpIOpen frame into buf (TTL, 11-bit CID + 5 flags, DLC, data, CRC). Preamble is not
+ * stored; TX sends preamble separately. Same buffer format on both buses; header is 4 bytes.
  *
  * \param buf          Output buffer (must have space for SPIOPEN_HEADER_LEN + data_len + 4 CRC).
  * \param buf_cap      Capacity of buf in bytes.
@@ -86,7 +87,7 @@ static inline uint16_t spiopen_cid_from_command_node(uint8_t command_4bit, uint8
  * \param flags_5bit    Five protocol flag bits (bits 11–15 of the CID+flags word); use 0 for standard frames.
  * \param data         Payload bytes (may be NULL if data_len 0).
  * \param data_len     Payload length 0–64 (must match a valid DLC: 0–8, 12, 16, 20, 24, 32, 48, 64).
- * \return Total frame length (5 + data_len + 4), or 0 on error.
+ * \return Total buffer length (4 + data_len + 4), or 0 on error.
  */
 size_t spiopen_frame_build(uint8_t *buf, size_t buf_cap, uint8_t ttl, uint16_t cid_11bit, uint8_t flags_5bit, const uint8_t *data, size_t data_len);
 

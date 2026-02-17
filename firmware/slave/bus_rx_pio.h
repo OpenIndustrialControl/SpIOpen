@@ -18,4 +18,10 @@ void bus_rx_pio_get_dropbus(PIO *pio, uint *sm);
 /** Get PIO and state machine for chainbus RX (CLK=28, MOSI=29). */
 void bus_rx_pio_get_chainbus(PIO *pio, uint *sm);
 
+/** Restart the dropbus PIO SM to program start so it re-syncs on preamble. Call from DMA body-complete IRQ. */
+void bus_rx_pio_restart_dropbus(void);
+
+/** Restart the chainbus PIO SM to program start so it re-syncs on preamble. Call from DMA body-complete IRQ. */
+void bus_rx_pio_restart_chainbus(void);
+
 #endif /* BUS_RX_PIO_H */

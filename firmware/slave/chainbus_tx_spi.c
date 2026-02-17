@@ -39,7 +39,7 @@
 /* Chainbus output pins per README / DevelopmentPlan */
 #define CHAINBUS_TX_SPI_CLK_PIN   2
 #define CHAINBUS_TX_SPI_MOSI_PIN  3
-#define CHAINBUS_TX_SPI_BAUD_HZ   (100u * 1000)  /* 100 kHz for Phase 1 test */
+#define CHAINBUS_TX_SPI_BAUD_HZ   (10u * 1000)   /* 10 kHz for Phase 1 test */
 
 #define TX_TASK_STACK_SIZE     (configMINIMAL_STACK_SIZE * 2)
 #define TX_TASK_PRIORITY       (tskIDLE_PRIORITY + 2)
@@ -73,10 +73,16 @@ static void chainbus_tx_task(void *pvParameters)
             continue;
 
         s_current_tx_buf = desc.buf;
+        /* Send preamble before DMA; buffer holds [TTL, CID, DLC, data, CRC] only. */
+        {
+            const uint8_t preamble_byte = (uint8_t)SPIOPEN_PREAMBLE;
+            spi_write_blocking(s_spi, &preamble_byte, 1);
+        }
+
         dma_channel_set_read_addr(s_dma_ch, desc.buf, false);
         dma_channel_set_trans_count(s_dma_ch, (uint32_t)desc.len, false);
 
-        /* DMA sniffer (global) computes CRC-32 on this channel; init and enable before start. */
+        /* DMA sniffer (global) computes CRC-32 on this channel (buffer only; preamble excluded). */
         dma_sniffer_set_data_accumulator(0xFFFFFFFFu);
         dma_sniffer_enable(s_dma_ch, 0, true);  /* mode 0 = CRC-32 IEEE 802.3 */
 

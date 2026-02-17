@@ -1,8 +1,7 @@
 /**
  * SpIOpen slave – drop bus RX (downstream MOSI drop bus).
- * PIO SPI slave (CLK=26, MOSI=27) syncs on preamble 0xAA and pushes bytes to RX FIFO.
- * Two-phase DMA: (1) 5 words (header) into header stage; (2) (frame_len - 5) into body stage.
- * Unified frame format: preamble, TTL, CID+flags (2), DLC = 5 bytes always.
+ * PIO pushes one byte per frame byte (MOSI only; 8-bit). Two-phase DMA at 1-byte granularity:
+ * (1) 4 bytes into buf[0..3]; (2) (frame_len - 4) bytes into buf[4..]. No staging or unpack.
  */
 #include "dropbus_rx.h"
 #include "bus_rx_pio.h"
@@ -21,9 +20,7 @@
 #include <stddef.h>
 #include <stdio.h>
 
-#define DROPBUS_RX_HEADER_LEN    SPIOPEN_HEADER_LEN   /* 5: preamble, TTL, CID+flags (2), DLC */
-#define DROPBUS_RX_HEADER_WORDS  5
-#define DROPBUS_RX_BODY_STAGE_MAX  (SPIOPEN_FRAME_BUF_SIZE - DROPBUS_RX_HEADER_LEN)
+#define DROPBUS_RX_HEADER_LEN    SPIOPEN_HEADER_LEN   /* 4: TTL, CID+flags (2), DLC (no preamble in buffer) */
 
 #define NUM_PIO_SM  4u
 
@@ -40,20 +37,13 @@ static SemaphoreHandle_t s_dropbus_done_sem;
 static uint8_t *s_dropbus_buf;
 static uint8_t s_dropbus_frame_len;
 
-/** Header phase: one 32-bit word per byte (low 8 bits). */
-static uint32_t s_dropbus_header_stage[DROPBUS_RX_HEADER_WORDS];
-/** Body phase: one word per byte; unpack into buffer after header. */
-static uint32_t s_dropbus_body_stage[DROPBUS_RX_BODY_STAGE_MAX];
-
 /**
- * Compute total frame length from the 5-byte header. DLC at byte 4.
- * Returns 0 if invalid.
+ * Compute total frame length from the 4-byte header. DLC at byte 3.
+ * Returns 0 if invalid. Preamble is not in buffer (PIO does not push it).
  */
 static uint8_t dropbus_frame_len_from_header(const uint8_t *buf)
 {
-    if (buf[0] != SPIOPEN_PREAMBLE)
-        return 0;
-    uint8_t dlc_byte = buf[4];
+    uint8_t dlc_byte = buf[3];
     uint8_t dlc_raw;
     if (spiopen_dlc_decode(dlc_byte, &dlc_raw) != 0)
         return 0;
@@ -66,35 +56,22 @@ static uint8_t dropbus_frame_len_from_header(const uint8_t *buf)
     return (uint8_t)len;
 }
 
-/** Unpack header words (low 8 bits each) into buf. */
-static void dropbus_unpack_header(uint8_t *buf)
-{
-    for (int i = 0; i < DROPBUS_RX_HEADER_LEN; i++)
-        buf[i] = (uint8_t)(s_dropbus_header_stage[i] & 0xFFu);
-}
-
-/** Unpack body into buf[HEADER_LEN .. HEADER_LEN+body_len-1]. */
-static void dropbus_unpack_body(uint8_t *buf, uint8_t body_len)
-{
-    for (uint8_t i = 0; i < body_len; i++)
-        buf[DROPBUS_RX_HEADER_LEN + i] = (uint8_t)(s_dropbus_body_stage[i] & 0xFFu);
-}
-
-/** Per-channel callbacks: dispatcher acks; we only do work. */
+/** Header phase done: buf[0..3] filled; start body DMA. */
 static void dropbus_rx_header_cb(void)
 {
     BaseType_t woken = pdFALSE;
-    dropbus_unpack_header(s_dropbus_buf);
     s_dropbus_frame_len = dropbus_frame_len_from_header(s_dropbus_buf);
     if (s_dropbus_frame_len == 0) {
-        frame_pool_put(s_dropbus_buf);
+        /* Debug: pass header-only frame to queue so invalid headers can be inspected. */
+        send_to_dropbus_rx_from_isr(s_dropbus_buf, DROPBUS_RX_HEADER_LEN, &woken);
         s_dropbus_buf = NULL;
+        bus_rx_pio_restart_dropbus();  /* Re-sync on next preamble */
         xSemaphoreGiveFromISR(s_dropbus_done_sem, &woken);
     } else {
-        uint32_t body_words = (uint32_t)(s_dropbus_frame_len - DROPBUS_RX_HEADER_LEN);
+        uint32_t body_bytes = (uint32_t)(s_dropbus_frame_len - DROPBUS_RX_HEADER_LEN);
         dma_channel_set_read_addr(s_dma_ch_body, (void *)&pio0_hw->rxf[s_sm], false);
-        dma_channel_set_write_addr(s_dma_ch_body, s_dropbus_body_stage, false);
-        dma_channel_set_trans_count(s_dma_ch_body, body_words, true);
+        dma_channel_set_write_addr(s_dma_ch_body, s_dropbus_buf + DROPBUS_RX_HEADER_LEN, false);
+        dma_channel_set_trans_count(s_dma_ch_body, body_bytes, true);
     }
     portYIELD_FROM_ISR(woken);
 }
@@ -102,12 +79,12 @@ static void dropbus_rx_header_cb(void)
 static void dropbus_rx_body_cb(void)
 {
     BaseType_t woken = pdFALSE;
+    bus_rx_pio_restart_dropbus();  /* Re-sync on next preamble */
     if (s_dropbus_buf != NULL && s_dropbus_frame_len != 0) {
-        dropbus_unpack_body(s_dropbus_buf, (uint8_t)(s_dropbus_frame_len - DROPBUS_RX_HEADER_LEN));
-        if (spiopen_crc32_verify_frame(s_dropbus_buf, (size_t)s_dropbus_frame_len))
+        //if (spiopen_crc32_verify_frame(s_dropbus_buf, (size_t)s_dropbus_frame_len))
             send_to_dropbus_rx_from_isr(s_dropbus_buf, s_dropbus_frame_len, &woken);
-        else
-            frame_pool_put(s_dropbus_buf);
+        //else
+        //    frame_pool_put(s_dropbus_buf);
         s_dropbus_buf = NULL;
     }
     xSemaphoreGiveFromISR(s_dropbus_done_sem, &woken);
@@ -129,8 +106,8 @@ static void dropbus_rx_task(void *pvParameters)
 
         s_dropbus_buf = buf;
         dma_channel_set_read_addr(s_dma_ch_header, (void *)&pio0_hw->rxf[s_sm], false);
-        dma_channel_set_write_addr(s_dma_ch_header, s_dropbus_header_stage, false);
-        dma_channel_set_trans_count(s_dma_ch_header, DROPBUS_RX_HEADER_WORDS, true);
+        dma_channel_set_write_addr(s_dma_ch_header, s_dropbus_buf, false);
+        dma_channel_set_trans_count(s_dma_ch_header, (uint32_t)DROPBUS_RX_HEADER_LEN, true);
 
         (void)xSemaphoreTake(s_dropbus_done_sem, portMAX_DELAY);
     }
@@ -157,7 +134,7 @@ void dropbus_rx_init(void)
     for (int i = 0; i < 2; i++) {
         uint ch = (i == 0) ? s_dma_ch_header : s_dma_ch_body;
         dma_channel_config dc = dma_channel_get_default_config(ch);
-        channel_config_set_transfer_data_size(&dc, DMA_SIZE_32);
+        channel_config_set_transfer_data_size(&dc, DMA_SIZE_8);
         channel_config_set_read_increment(&dc, false);
         channel_config_set_write_increment(&dc, true);
         channel_config_set_dreq(&dc, dreq_rx);

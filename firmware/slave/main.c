@@ -142,12 +142,12 @@ static void ttl_forward_task(void *pvParameters)
     for (;;) {
         if (receive_from_chainbus_rx(&desc, portMAX_DELAY) != pdTRUE)
             continue;
-        /* TTL is at buf[1] per Architecture */
-        if (desc.buf[1] == 0) {
+        /* TTL is at buf[0] (header is TTL, CID, DLC; no preamble in buffer). */
+        if (desc.buf[0] == 0) {
             frame_pool_put(desc.buf);
             continue;
         }
-        desc.buf[1]--;
+        desc.buf[0]--;
         (void)send_to_chainbus_tx(desc.buf, desc.len, portMAX_DELAY);
     }
 }

@@ -1,6 +1,6 @@
 /**
- * SpIOpen – build TX frames (unified format: preamble, TTL, 11-bit CID + 5 flags, DLC, data, CRC).
- * Used for MISO Chain Bus TX; same format applies to MOSI Drop Bus TX.
+ * SpIOpen – build TX frame buffer (TTL, 11-bit CID + 5 flags, DLC, data, CRC).
+ * Preamble is not stored; TX sends preamble then this buffer. CRC is over this buffer only.
  */
 #include "spiopen_protocol.h"
 #include <stddef.h>
@@ -19,19 +19,19 @@ size_t spiopen_frame_build(uint8_t *buf, size_t buf_cap, uint8_t ttl, uint16_t c
     if (buf_cap < total)
         return 0;
 
-    buf[0] = SPIOPEN_PREAMBLE;
-    buf[1] = ttl;
-    /* Bytes 2-3: 11-bit CID + 5 flags, big-endian (high 8 bits, then low 8 bits). */
+    buf[0] = ttl;
+    /* Bytes 1-2: 11-bit CID + 5 flags, big-endian (high 8 bits, then low 8 bits). */
     uint16_t cid_flags = (uint16_t)((flags_5bit & SPIOPEN_CID_FLAGS_MASK) << SPIOPEN_CID_FLAGS_SHIFT) | (cid_11bit & 0x7FFu);
-    buf[2] = (uint8_t)(cid_flags >> 8);
-    buf[3] = (uint8_t)(cid_flags & 0xFFu);
-    if (spiopen_dlc_encode(dlc_raw, &buf[4]) != 0)
+    buf[1] = (uint8_t)(cid_flags >> 8);
+    buf[2] = (uint8_t)(cid_flags & 0xFFu);
+    if (spiopen_dlc_encode(dlc_raw, &buf[3]) != 0)
         return 0;
 
     if (data_len != 0 && data != NULL) {
         for (size_t i = 0; i < data_len; i++)
             buf[SPIOPEN_HEADER_LEN + i] = data[i];
     }
+    /* CRC over [TTL, CID, DLC, data] only; preamble excluded. */
     spiopen_append_crc32(buf, (size_t)SPIOPEN_HEADER_LEN + data_len);
     return total;
 }

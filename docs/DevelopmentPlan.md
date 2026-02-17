@@ -23,16 +23,18 @@ Short summary of the phased approach. Full architecture: [Architecture.md](Archi
 
 **Pin assignments (RP2040 XIAO, loopback only):**
 
+PIO RX ports use a **MOSI-first** group: pin 0 = MOSI (data), pin 1 = CLK; GPIOs must be consecutive (CLK = MOSI + 1).
+
 | GPIO | Role | Interface |
 |------|------|-----------|
-| 26 | Downstream drop bus CLK | PIO |
-| 27 | Downstream drop bus MOSI (data) | PIO |
-| 28 | Upstream chain bus input CLK | PIO |
-| 29 | Upstream chain bus input MOSI (data) | PIO |
+| 26 | Downstream drop bus MOSI (data) — PIO pin 0 | PIO |
+| 27 | Downstream drop bus CLK — PIO pin 1 | PIO |
+| 28 | Upstream chain bus input MOSI (data) — PIO pin 0 | PIO |
+| 29 | Upstream chain bus input CLK — PIO pin 1 | PIO |
 | 2 | Upstream chain bus output CLK | Hardware SPI |
 | 3 | Upstream chain bus output MOSI (data) | Hardware SPI |
 
-**Wiring:** SPI output CLK and MOSI wired to **both** PIO inputs' CLK and MOSI.
+**Wiring:** SPI output CLK and MOSI wired to **both** PIO inputs' CLK and MOSI (connect SPI MOSI to GPIO 26 and 28, SPI CLK to GPIO 27 and 29).
 
 **Success criteria:** Chain path echo at 10 MHz with TTL decrement and no CRC errors; drop path receives frames (mock handler); optional LED/UART log.
 
