@@ -15,9 +15,9 @@
  *   transfer or blocks again on the queue. The semaphore therefore means
  *   "the current DMA transfer has finished."
  *
- * The single RP2040 DMA sniffer (CRC-32) is used on this channel only: we have
- * the full frame in one buffer and one DMA, so hardware CRC fits here. Other
- * ports (dropbus RX, etc.) use software spiopen_crc32.
+ * CRC is recomputed (software) over the buffer before each DMA so that any
+ * in-place edits (e.g. TTL decrement) are reflected; the last 4 bytes are
+ * overwritten with the correct CRC before the buffer is sent.
  *
  * RP2040 DMA interrupt rule: channels 0–3 fire DMA_IRQ_0; channels 4–7 fire
  * DMA_IRQ_1. We use one channel, so we enable/ack the correct IRQ by channel.
@@ -53,8 +53,6 @@ static volatile uint8_t *s_current_tx_buf;
 static void chainbus_tx_dma_cb(void)
 {
     BaseType_t woken = pdFALSE;
-    (void)dma_sniffer_get_data_accumulator();
-    dma_sniffer_disable();
     if (s_current_tx_buf != NULL) {
         frame_pool_put((uint8_t *)s_current_tx_buf);
         s_current_tx_buf = NULL;
@@ -73,6 +71,8 @@ static void chainbus_tx_task(void *pvParameters)
             continue;
 
         s_current_tx_buf = desc.buf;
+        /* Recompute CRC over header+payload and overwrite last 4 bytes (handles TTL decrement etc.). */
+        spiopen_append_crc32(desc.buf, (size_t)(desc.len - SPIOPEN_CRC_BYTES));
         /* Send preamble before DMA; buffer holds [TTL, CID, DLC, data, CRC] only. */
         {
             const uint8_t preamble_byte = (uint8_t)SPIOPEN_PREAMBLE;
@@ -81,11 +81,6 @@ static void chainbus_tx_task(void *pvParameters)
 
         dma_channel_set_read_addr(s_dma_ch, desc.buf, false);
         dma_channel_set_trans_count(s_dma_ch, (uint32_t)desc.len, false);
-
-        /* DMA sniffer (global) computes CRC-32 on this channel (buffer only; preamble excluded). */
-        dma_sniffer_set_data_accumulator(0xFFFFFFFFu);
-        dma_sniffer_enable(s_dma_ch, 0, true);  /* mode 0 = CRC-32 IEEE 802.3 */
-
         dma_channel_start(s_dma_ch);
 
         (void)xSemaphoreTake(s_tx_done_sem, portMAX_DELAY);
