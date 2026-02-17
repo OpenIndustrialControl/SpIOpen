@@ -53,6 +53,26 @@ void spiopen_append_crc32(uint8_t *buf, size_t len);
 /* CANopen COB-ID for first PDO of node 1 (used for demo/fake PDO). */
 #define SPIOPEN_CHAIN_COB_ID_PDO1_NODE1  181u  /* 0x181 */
 
+/**
+ * 11-bit CID bit layout: 4-bit command (MSBs) + 7-bit node ID (LSBs).
+ * CID = (command << SPIOPEN_CID_COMMAND_SHIFT) | node_id.
+ * In the header, bytes 2–3 hold a 16-bit word: bits 0–10 = CID, bits 11–15 = 5 flag bits.
+ */
+#define SPIOPEN_CID_NODE_SHIFT       0u   /**< Node ID occupies LSBs of the 11-bit CID (7 bits). */
+#define SPIOPEN_CID_COMMAND_SHIFT   7u   /**< Command/function code occupies MSBs of the 11-bit CID (4 bits). */
+#define SPIOPEN_CID_FLAGS_SHIFT      11u  /**< Protocol flags occupy bits 11–15 of the 16-bit header word (5 bits). */
+
+#define SPIOPEN_CID_NODE_MASK        0x7Fu  /**< Mask for 7-bit node ID (use after shift 0). */
+#define SPIOPEN_CID_COMMAND_MASK     0x0Fu  /**< Mask for 4-bit command (use before shift). */
+#define SPIOPEN_CID_FLAGS_MASK       0x1Fu  /**< Mask for 5 flag bits (use before shift). */
+
+/** Build 11-bit CID from 4-bit command and 7-bit node ID. Command in MSBs, node in LSBs. */
+static inline uint16_t spiopen_cid_from_command_node(uint8_t command_4bit, uint8_t node_id_7bit)
+{
+    return (uint16_t)((command_4bit & SPIOPEN_CID_COMMAND_MASK) << SPIOPEN_CID_COMMAND_SHIFT)
+         | (uint16_t)(node_id_7bit & SPIOPEN_CID_NODE_MASK);
+}
+
 /* ----- Frame build (unified format: drop bus and chain bus) ----- */
 
 /**
@@ -71,8 +91,8 @@ void spiopen_append_crc32(uint8_t *buf, size_t len);
 size_t spiopen_frame_build(uint8_t *buf, size_t buf_cap, uint8_t ttl, uint16_t cid_11bit, uint8_t flags_5bit, const uint8_t *data, size_t data_len);
 
 /**
- * Wrapper: build frame with 11-bit COB-ID from function_code (4 bits) and node_id (7 bits), flags=0.
- * COB-ID = (function_code << 7) | node_id. Use for standard PDO/SDO-style frames.
+ * Wrapper: build frame with 11-bit CID from function_code (4 bits) and node_id (7 bits), flags=0.
+ * Uses spiopen_cid_from_command_node() so CID = (command << 7) | node_id. Use for standard PDO/SDO-style frames.
  * \return Total frame length, or 0 on error.
  */
 size_t spiopen_frame_build_std(uint8_t *buf, size_t buf_cap, uint8_t ttl, uint8_t function_code_4bit, uint8_t node_id_7bit, const uint8_t *data, size_t data_len);

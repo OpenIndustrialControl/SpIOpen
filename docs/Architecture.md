@@ -123,13 +123,13 @@ The same frame layout is used on **MOSI Drop Bus** (master → slaves) and **MIS
   - Chosen for more transitions (10101010) → better clock recovery and sync detection.  
 - **CRC-32**: IEEE 802.3 polynomial, 4 bytes, appended at end.  
 - **DLC**: 0–64 bytes (CAN-FD compatible), Hamming(8,4) SECDED encoded as one byte (4-bit DLC in 8-bit encoded form).  
-- **CID**: 11-bit CANopen COB-ID only (no extended CAN IDs). Matches 7-bit Node ID semantics (function code in high bits, node in low 7).
+- **CID**: 11-bit CANopen COB-ID only (no extended CAN IDs). Composed of a **4-bit command** (function code) in the **most significant bits** and a **7-bit node ID** in the **least significant bits**: `CID = (command << 7) | node_id`. The protocol library provides `spiopen_cid_from_command_node()` and defines `SPIOPEN_CID_COMMAND_SHIFT` (7), `SPIOPEN_CID_NODE_SHIFT` (0), and `SPIOPEN_CID_FLAGS_SHIFT` (11) for use with shift operators and masks.
 
 ### Frame Layout (Drop Bus and Chain Bus)
 - **Byte 0**: Preamble (0xAA)
 - **Byte 1**: TTL (time to live, 8 bits). Decremented before retransmit on the chain; on the drop bus the master sets it (e.g. for consistency or future use).
 - **Bytes 2–3**: 11-bit CID + 5 flag bits (16 bits total, big-endian).  
-  - Bits 0–10: 11-bit COB-ID (CiA 301).  
+  - Bits 0–10: 11-bit COB-ID (CiA 301). Within this: bits 0–6 = 7-bit node ID (LSBs), bits 7–10 = 4-bit command/function code (MSBs). So `CID = (command << 7) | node_id`.  
   - Bits 11–15: 5 protocol flags (reserved / FDF / BRS etc. for future use).  
   - Byte 2 = high 8 bits; byte 3 = low 8 bits.
 - **Byte 4**: DLC (1 byte, Hamming-encoded 4-bit data length code).

@@ -118,7 +118,7 @@ static void chainbus_rx_task(void *pvParameters)
             continue;
         }
         while (pio_sm_is_rx_fifo_empty(s_pio, s_sm))
-            taskYIELD();
+            vTaskDelay(pdMS_TO_TICKS(1));
 
         s_chainbus_rx_buf = buf;
         dma_channel_set_read_addr(s_dma_ch_header, (void *)&pio0_hw->rxf[s_sm], false);

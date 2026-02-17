@@ -121,8 +121,8 @@ int main(void)
     wait_key();
 
     printf("create: ttl task...\r\n");
-    xTaskCreate(ttl_forward_task, "ttl", TTL_TASK_STACK_SIZE, NULL, TTL_TASK_PRIORITY, NULL);
-    printf("create: ttl task ok\r\n");
+    // xTaskCreate(ttl_forward_task, "ttl", TTL_TASK_STACK_SIZE, NULL, TTL_TASK_PRIORITY, NULL);  /* disabled for serial isolation */
+    printf("create: ttl task ok (skipped)\r\n");
 
     printf("create: app task...\r\n");
     xTaskCreate(app_task, "app", APP_TASK_STACK_SIZE, NULL, APP_TASK_PRIORITY, NULL);
