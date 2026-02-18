@@ -39,7 +39,7 @@
 /* Chainbus output pins per README / DevelopmentPlan */
 #define CHAINBUS_TX_SPI_CLK_PIN   2
 #define CHAINBUS_TX_SPI_MOSI_PIN  3
-#define CHAINBUS_TX_SPI_BAUD_HZ   (10u * 1000)   /* 10 kHz for Phase 1 test */
+#define CHAINBUS_TX_SPI_BAUD_HZ   (uint32_t)(1u * 1000u * 1000u)  /* 1 MHz */
 
 #define TX_TASK_STACK_SIZE     (configMINIMAL_STACK_SIZE * 2)
 #define TX_TASK_PRIORITY       (tskIDLE_PRIORITY + 2)

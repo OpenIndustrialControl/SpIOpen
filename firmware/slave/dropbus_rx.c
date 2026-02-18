@@ -100,10 +100,6 @@ static void dropbus_rx_task(void *pvParameters)
             vTaskDelay(pdMS_TO_TICKS(1));
             continue;
         }
-        /* Wait for preamble/data; block instead of busy-yield so we don't starve lower-priority tasks. */
-        while (pio_sm_is_rx_fifo_empty(s_pio, s_sm))
-            vTaskDelay(pdMS_TO_TICKS(1));
-
         s_dropbus_buf = buf;
         dma_channel_set_read_addr(s_dma_ch_header, (void *)&pio0_hw->rxf[s_sm], false);
         dma_channel_set_write_addr(s_dma_ch_header, s_dropbus_buf, false);

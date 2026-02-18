@@ -24,8 +24,8 @@
 /* Task stack and priority */
 #define APP_TASK_STACK_SIZE   (configMINIMAL_STACK_SIZE * 3)
 #define TTL_TASK_STACK_SIZE   (configMINIMAL_STACK_SIZE * 2)
-#define APP_TASK_PRIORITY     (tskIDLE_PRIORITY + 1)
-#define TTL_TASK_PRIORITY     (tskIDLE_PRIORITY + 1)
+#define APP_TASK_PRIORITY     (tskIDLE_PRIORITY + 3)   /* Above RX tasks so we drain queues and return buffers first */
+#define TTL_TASK_PRIORITY     (tskIDLE_PRIORITY + 3)
 
 static void app_task(void *pvParameters);
 static void ttl_forward_task(void *pvParameters);
