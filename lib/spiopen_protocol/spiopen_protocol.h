@@ -14,15 +14,6 @@
 #define SPIOPEN_CRC_BYTES     4
 #define SPIOPEN_MAX_PAYLOAD   64
 
-/**
- * When the last 4 bytes of a frame buffer are the correct IEEE 802.3 CRC-32,
- * CRC(entire_frame_buffer) equals this residue. Frame buffer = [TTL, CID, DLC, data, CRC];
- * preamble is not included in the buffer or in CRC. Use for software verification on
- * dropbus RX and other ports. Chainbus TX uses the single RP2040 DMA sniffer for
- * hardware CRC (buffer only, no preamble).
- */
-#define SPIOPEN_CRC32_RESIDUE  0xC704DD7Bu
-
 /* ----- DLC (Hamming 8,4) ----- */
 uint8_t spiopen_dlc_to_byte_count(uint8_t dlc_raw);
 /** Map payload byte count (0–8, 12, 16, 20, 24, 32, 48, 64) to DLC raw 0–15. Returns 0xFF if invalid. */
@@ -34,14 +25,20 @@ int spiopen_dlc_decode(uint8_t encoded, uint8_t *out_dlc_raw);
 uint32_t spiopen_crc32(const uint8_t *data, size_t len);
 
 /**
- * Verify frame CRC: CRC(full_frame) == SPIOPEN_CRC32_RESIDUE.
+ * Verify frame CRC: compute CRC over frame[0..len-5] and compare to the
+ * last 4 bytes (big-endian, same order as spiopen_append_crc32).
  * Returns 1 if valid, 0 if invalid or len < SPIOPEN_CRC_BYTES.
  */
 static inline int spiopen_crc32_verify_frame(const uint8_t *frame, size_t len)
 {
     if (frame == NULL || len < SPIOPEN_CRC_BYTES)
         return 0;
-    return spiopen_crc32(frame, len) == SPIOPEN_CRC32_RESIDUE ? 1 : 0;
+    uint32_t computed = spiopen_crc32(frame, len - SPIOPEN_CRC_BYTES);
+    uint32_t received = ((uint32_t)frame[len - 4] << 24)
+                      | ((uint32_t)frame[len - 3] << 16)
+                      | ((uint32_t)frame[len - 2] << 8)
+                      | ((uint32_t)frame[len - 1]);
+    return (computed == received) ? 1 : 0;
 }
 
 /**

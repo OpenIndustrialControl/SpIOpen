@@ -79,10 +79,10 @@ static void chainbus_rx_body_cb(void)
     BaseType_t woken = pdFALSE;
     bus_rx_pio_restart_chainbus();  /* Re-sync on next preamble */
     if (s_chainbus_rx_buf != NULL && s_chainbus_rx_frame_len != 0) {
-        //if (spiopen_crc32_verify_frame(s_chainbus_rx_buf, (size_t)s_chainbus_rx_frame_len))
+        if (spiopen_crc32_verify_frame(s_chainbus_rx_buf, (size_t)s_chainbus_rx_frame_len))
             send_to_chainbus_rx_from_isr(s_chainbus_rx_buf, s_chainbus_rx_frame_len, &woken);
-        //else
-        //    frame_pool_put(s_chainbus_rx_buf);
+        else
+            frame_pool_put(s_chainbus_rx_buf);
         s_chainbus_rx_buf = NULL;
     }
     xSemaphoreGiveFromISR(s_chainbus_rx_done_sem, &woken);
