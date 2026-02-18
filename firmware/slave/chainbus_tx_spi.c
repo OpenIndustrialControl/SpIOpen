@@ -30,6 +30,7 @@
 #include "FreeRTOS.h"
 #include "semphr.h"
 #include "task.h"
+#include "hardware/gpio.h"
 #include "hardware/spi.h"
 #include "hardware/irq.h"
 #include "pico/stdlib.h"
@@ -39,7 +40,7 @@
 /* Chainbus output pins per README / DevelopmentPlan */
 #define CHAINBUS_TX_SPI_CLK_PIN   2
 #define CHAINBUS_TX_SPI_MOSI_PIN  3
-#define CHAINBUS_TX_SPI_BAUD_HZ   (uint32_t)(1u * 1000u * 1000u)  /* 1 MHz */
+#define CHAINBUS_TX_SPI_BAUD_HZ   (uint32_t)(10u * 1000u * 1000u)  /* 1 MHz */
 
 #define TX_TASK_STACK_SIZE     (configMINIMAL_STACK_SIZE * 2)
 #define TX_TASK_PRIORITY       (tskIDLE_PRIORITY + 2)
@@ -96,6 +97,8 @@ void chainbus_tx_spi_init(void)
     spi_init(s_spi, CHAINBUS_TX_SPI_BAUD_HZ);
     gpio_set_function(CHAINBUS_TX_SPI_CLK_PIN, GPIO_FUNC_SPI);
     gpio_set_function(CHAINBUS_TX_SPI_MOSI_PIN, GPIO_FUNC_SPI);
+    gpio_set_drive_strength(CHAINBUS_TX_SPI_CLK_PIN, GPIO_DRIVE_STRENGTH_12MA);
+    gpio_set_drive_strength(CHAINBUS_TX_SPI_MOSI_PIN, GPIO_DRIVE_STRENGTH_12MA);
     spi_set_format(s_spi, 8, SPI_CPOL_0, SPI_CPHA_0, SPI_MSB_FIRST);
 
     s_dma_ch = dma_claim_unused_channel(true);

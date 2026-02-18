@@ -81,10 +81,10 @@ static void dropbus_rx_body_cb(void)
     BaseType_t woken = pdFALSE;
     bus_rx_pio_restart_dropbus();  /* Re-sync on next preamble */
     if (s_dropbus_buf != NULL && s_dropbus_frame_len != 0) {
-        if (spiopen_crc32_verify_frame(s_dropbus_buf, (size_t)s_dropbus_frame_len))
+        //if (spiopen_crc32_verify_frame(s_dropbus_buf, (size_t)s_dropbus_frame_len))
             send_to_dropbus_rx_from_isr(s_dropbus_buf, s_dropbus_frame_len, &woken);
-        else
-            frame_pool_put(s_dropbus_buf);
+        //else
+        //    frame_pool_put(s_dropbus_buf);
         s_dropbus_buf = NULL;
     }
     xSemaphoreGiveFromISR(s_dropbus_done_sem, &woken);
