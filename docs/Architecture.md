@@ -75,7 +75,7 @@ We chose a single-master, multiple-slave daisy-chain topology over pure multi-dr
 - On the **MISO Chain Bus**, slaves **blindly forward** all incoming upstream frames from the previous slave after decrementing TTL (drop if TTL=0).  
   - They do **not** inspect or react to the content of forwarded frames.  
   - If the slave has its own frame to send (PDO event, SDO reply, heartbeat, EMCY), it appends it to the chain (simple insert after forwarding current frame).  
-- Use CANopenNode stack with custom serial transport driver.  
+- Use CANopenNode stack with custom serial transport driver (Phase 2: SpIOpen driver; RxPDO1 maps to RGB LED 0x6200).  
 - Support full 64-byte PDO payloads (no splitting).  
 - Node ID assigned by master via LSS (1–127 range, 7-bit), with extra logic in the master to track physical position on bus by inspecting TTL values.
 
@@ -144,6 +144,18 @@ The same frame layout is used on **MOSI Drop Bus** (master → slaves) and **MIS
 - TTL on both buses → consistent layout; chain slaves decrement TTL when forwarding.  
 - Hamming-protected DLC → robust to 1-bit errors, detects 2-bit.  
 - CRC-32 → strong error detection, hardware-accelerated on many MCUs.
+
+## 6. Shared Libraries (SpIOpen–CANopenNode)
+
+To keep slave and master firmware consistent and avoid duplication, SpIOpen–CANopenNode integration lives in a small common library used by both:
+
+- **`lib/spiopen_protocol`**: Frame layout, CRC-32, Hamming DLC, `spiopen_frame_build` (no RTOS/hardware deps).  
+- **`lib/spiopen_canopen`**: Builds on `spiopen_protocol` and provides:
+  - **`CO_CANrxMsg_t`** and **`CO_CANrxMsg_read*`** macros — CANopenNode-compatible RX message type (ident, DLC, data[8]).
+  - **`spiopen_frame_to_canopen_rx()`** — Parse a SpIOpen frame (verify CRC, decode header/DLC), fill a `CO_CANrxMsg_t`. Used by slave to inject RX and by master to turn received SpIOpen buffers into CANopen messages.
+  - **`spiopen_frame_from_canopen_tx()`** — Build a SpIOpen frame from ident/DLC/data and TTL. Used by slave in `CO_CANsend` and by master when sending CAN frames over SpIOpen.
+
+Slave and (future) master link `spiopen_canopen`; the slave’s `canopen_config/CO_driver_target.h` includes `spiopen_canopen.h` for the shared RX message type.
 
 ## Rationale Summary – Why This Architecture?
 

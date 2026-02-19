@@ -38,9 +38,19 @@ PIO RX ports use a **MOSI-first** group: pin 0 = MOSI (data), pin 1 = CLK; GPIOs
 
 **Success criteria:** Chain path echo at 10 MHz with TTL decrement and no CRC errors; drop path receives frames (mock handler); optional LED/UART log.
 
-## Phase 2: Single slave + CANopenNode
+## Phase 2: Single slave + CANopenNode (in progress)
 
-Full protocol in `lib/spiopen_protocol`; slave firmware with CANopenNode and custom SpIOpen transport. Test with host or ESP32 master.
+**Goal:** CANopenNode on the RP2040 slave with a custom SpIOpen transport driver; analog RGB LED (XIAO GPIO 16=G, 17=R, 25=B) exposed as 3 bytes (R,G,B) on **RxPDO1** (COB-ID 0x201), so a future master can set the LED color.
+
+**Implemented:**
+
+- Full protocol in `lib/spiopen_protocol`; slave firmware integrates CANopenNode via FetchContent.
+- **SpIOpen driver** (`CO_driver.c`, `spiopen_can_driver.h`): dropbus RX frames → CRC check, CID/DLC parse → inject into CANopenNode as CAN messages; CANopenNode TX → SpIOpen frame build → `chainbus_tx`.
+- **Object dictionary** (`canopen_od/OD.h`, `OD.c`): minimal DS301 OD with 0x6200 RGB (sub0=3, sub1–3=R,G,B); RxPDO1 0x1400 COB-ID 0x201, transmission type 255; 0x1600 maps three 8-bit objects (0x62000108, 0x62000208, 0x62000308).
+- **RGB LED** (`led_rgb_pwm.c/h`): PWM on GPIO 16, 17, 25 (active-low); `led_rgb_set(r,g,b)` driven from OD 0x6200 after `CO_RPDO_process`.
+- **Tasks:** `canopen_task` blocks on `receive_from_dropbus_rx`, calls `spiopen_can_driver_inject_rx`, then `CO_process` and `CO_RPDO_process`; LED updated from OD. `ttl_forward_task` unchanged (chainbus_rx → chainbus_tx with TTL decrement).
+
+**Node ID:** Default 1 (LSS can be added later).
 
 ## Phase 3: Master + multiple slaves
 
