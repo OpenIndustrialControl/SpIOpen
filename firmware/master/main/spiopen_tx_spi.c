@@ -1,6 +1,6 @@
 /**
  * SpIOpen master – drop bus TX via SPI2 master (MOSI + CLK @ 10 MHz).
- * Task blocks on SpIOpen TX queue; sends preamble 0xAA then frame buffer.
+ * Task blocks on SpIOpen TX queue; sends buffer (preamble 0xAA 0xAA + frame) in one transaction.
  */
 #include "spiopen_tx_spi.h"
 #include "spiopen_queues.h"
@@ -28,18 +28,11 @@ static void spiopen_tx_task(void *pvParameters)
         if (receive_from_spiopen_tx(&desc, portMAX_DELAY) != pdTRUE)
             continue;
 
-        uint8_t preamble = SPIOPEN_PREAMBLE;
-        spi_transaction_t t_preamble = {
-            .length = 8,
-            .tx_buffer = &preamble,
-        };
-        spi_device_polling_transmit(s_spi_dev, &t_preamble);
-
-        spi_transaction_t t_frame = {
+        spi_transaction_t t = {
             .length = (size_t)desc.len * 8,
             .tx_buffer = desc.buf,
         };
-        spi_device_polling_transmit(s_spi_dev, &t_frame);
+        spi_device_polling_transmit(s_spi_dev, &t);
 
         frame_pool_put(desc.buf);
     }

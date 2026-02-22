@@ -2,7 +2,7 @@
  * SpIOpen master – chain bus RX via I2S slave + DMA (high-speed).
  * No CS on chain; BCLK = chain CLK, DIN = chain MOSI. WS is driven locally
  * (e.g. GPIO tied low) for single-slot stream. DMA fills buffers; a task
- * runs a sliding-window parser to find preamble 0xAA and extract frames.
+ * runs a sliding-window parser to find two-byte preamble 0xAA 0xAA and extract frames.
  */
 #include "spiopen_rx_slave.h"
 #include "spiopen_queues.h"
@@ -44,13 +44,18 @@ static size_t parse_stream(uint8_t *stream, size_t total_len)
         const uint8_t *q = (const uint8_t *)memchr(p, SPIOPEN_PREAMBLE, remaining);
         if (q == NULL)
             break;
-        consumed += (size_t)(q - p) + 1u;  /* skip to first byte of frame (TTL) after preamble 0xAA */
+        /* Require two consecutive 0xAA bytes (bit-slip resilience). */
+        if (remaining < 2u || q[1] != SPIOPEN_PREAMBLE) {
+            consumed += (size_t)(q - p) + 1u;
+            continue;
+        }
+        consumed += (size_t)(q - p) + SPIOPEN_PREAMBLE_BYTES;
         p = stream + consumed;
         remaining = total_len - consumed;
 
         if (remaining < (size_t)SPIOPEN_HEADER_LEN)
             break;
-        uint8_t dlc_encoded = p[3];
+        uint8_t dlc_encoded = p[SPIOPEN_HEADER_OFFSET_DLC];
         uint8_t dlc_raw;
         if (spiopen_dlc_decode(dlc_encoded, &dlc_raw) != 0) {
             continue;  /* next iteration: memchr finds next 0xAA and advances consumed */
@@ -62,7 +67,7 @@ static size_t parse_stream(uint8_t *stream, size_t total_len)
         size_t frame_len = (size_t)SPIOPEN_HEADER_LEN + payload_len + SPIOPEN_CRC_BYTES;
         if (remaining < frame_len)
             break;
-        if (frame_len > SPIOPEN_FRAME_BUF_SIZE)
+        if (SPIOPEN_FRAME_CONTENT_OFFSET + frame_len > SPIOPEN_FRAME_BUF_SIZE)
             continue;
 
         if (!spiopen_crc32_verify_frame(p, frame_len)) {
@@ -73,8 +78,8 @@ static size_t parse_stream(uint8_t *stream, size_t total_len)
         if (fbuf == NULL) {
             continue;
         }
-        memcpy(fbuf, p, frame_len);
-        if (send_to_spiopen_rx(fbuf, (uint8_t)frame_len, 0) != pdTRUE)
+        memcpy(fbuf + SPIOPEN_FRAME_CONTENT_OFFSET, p, frame_len);
+        if (send_to_spiopen_rx(fbuf, (uint8_t)(SPIOPEN_PREAMBLE_BYTES + frame_len), 0) != pdTRUE)
             frame_pool_put(fbuf);
         consumed += frame_len;
     }

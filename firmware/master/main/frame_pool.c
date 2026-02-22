@@ -14,6 +14,8 @@ void frame_pool_init(void)
     configASSERT(s_free_queue != NULL);
     for (size_t i = 0; i < FRAME_POOL_SIZE; i++) {
         uint8_t *ptr = s_buffers[i];
+        ptr[0] = SPIOPEN_PREAMBLE;
+        ptr[1] = SPIOPEN_PREAMBLE;
         xQueueSend(s_free_queue, &ptr, 0);
     }
 }

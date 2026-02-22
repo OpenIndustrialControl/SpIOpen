@@ -72,13 +72,9 @@ static void chainbus_tx_task(void *pvParameters)
             continue;
 
         s_current_tx_buf = desc.buf;
-        /* Recompute CRC over header+payload and overwrite last 4 bytes (handles TTL decrement etc.). */
-        spiopen_append_crc32(desc.buf, (size_t)(desc.len - SPIOPEN_CRC_BYTES));
-        /* Send preamble before DMA; buffer holds [TTL, CID, DLC, data, CRC] only. */
-        {
-            const uint8_t preamble_byte = (uint8_t)SPIOPEN_PREAMBLE;
-            spi_write_blocking(s_spi, &preamble_byte, 1);
-        }
+        /* Recompute CRC over content (buf+2); buffer holds [0xAA, 0xAA, TTL..data, CRC]. */
+        spiopen_append_crc32(desc.buf + SPIOPEN_FRAME_CONTENT_OFFSET,
+            (size_t)(desc.len - SPIOPEN_PREAMBLE_BYTES - SPIOPEN_CRC_BYTES));
 
         dma_channel_set_read_addr(s_dma_ch, desc.buf, false);
         dma_channel_set_trans_count(s_dma_ch, (uint32_t)desc.len, false);

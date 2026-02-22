@@ -3,14 +3,15 @@
  * Load once; run on two state machines. PIO group: Pin 0 = MOSI (data), Pin 1 = CLK.
  * Mode 0: sample on rising edge, MSB first. WAIT uses pin 1 (CLK); IN and JMP use pin 0 (MOSI).
  *
- * Sync: watch for alternating pattern on MOSI that signals preamble (0xAA). Frame: shift 8 bits from MOSI into RX FIFO per byte; 8-bit DMA, no unpack in C.
+ * Sync: watch for two-byte preamble 0xAA 0xAA on MOSI (8 high ticks) for bit-slip resilience.
+ * Frame: shift 8 bits from MOSI into RX FIFO per byte; 8-bit DMA, no unpack in C.
  * NOTE: Pin 0 (MOSI) must be set as EXECCTRL_JMP_PIN in SM setup.
  */
 .program spiopen_bus_rx
 
-; ---- Sync: wait for preamble 0xAA (10101010) on MOSI ----
+; ---- Sync: wait for preamble 0xAA 0xAA (8 high ticks on MOSI) ----
 sync_restart:
-    set x, 3                    ; X = pulse counter for preamble (4 pulses in 0xAA)
+    set x, 7                    ; X = pulse counter for preamble (8 highs in 0xAA 0xAA)
 sync_expect_high:
     wait 0 pin 1                ; wait for CLK (pin 1) low / bus idle
     wait 1 pin 1                ; Wait for CLK rising edge; data valid on MOSI (pin 0)

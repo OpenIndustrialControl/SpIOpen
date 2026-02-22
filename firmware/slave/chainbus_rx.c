@@ -1,7 +1,7 @@
 /**
  * SpIOpen slave – chainbus RX (upstream chain input).
- * PIO pushes one byte per frame byte (MOSI only; 8-bit autopush). Two-phase DMA at 1-byte granularity:
- * (1) 4 bytes into buf[0..3]; (2) (frame_len - 4) bytes into buf[4..]. No staging or unpack.
+ * PIO syncs on two-byte preamble; two-phase DMA: (1) header into buf[SPIOPEN_FRAME_CONTENT_OFFSET..];
+ * (2) body into buf[SPIOPEN_FRAME_CONTENT_OFFSET+SPIOPEN_HEADER_LEN..]. buf[0..1] = 0xAA from pool.
  */
 #include "chainbus_rx.h"
 #include "bus_rx_pio.h"
@@ -19,7 +19,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#define CHAINBUS_RX_HEADER_LEN    SPIOPEN_HEADER_LEN   /* 4: TTL, CID+flags (2), DLC (no preamble in buffer) */
+#define CHAINBUS_RX_HEADER_LEN    SPIOPEN_HEADER_LEN
 
 #define NUM_PIO_SM  4u
 
@@ -36,12 +36,12 @@ static uint8_t *s_chainbus_rx_buf;
 static uint8_t s_chainbus_rx_frame_len;
 
 /**
- * Compute total frame length from the 4-byte header. DLC at byte 3.
- * Returns 0 if invalid. Preamble is not in buffer (PIO does not push it).
+ * Compute content length (header + payload + CRC) from the 4-byte header at buf (TTL..DLC).
+ * Returns 0 if invalid.
  */
-static uint8_t chainbus_rx_frame_len_from_header(const uint8_t *buf)
+static uint8_t chainbus_rx_frame_len_from_header(const uint8_t *header)
 {
-    uint8_t dlc_byte = buf[3];
+    uint8_t dlc_byte = header[SPIOPEN_HEADER_OFFSET_DLC];
     uint8_t dlc_raw;
     if (spiopen_dlc_decode(dlc_byte, &dlc_raw) != 0)
         return 0;
@@ -49,26 +49,26 @@ static uint8_t chainbus_rx_frame_len_from_header(const uint8_t *buf)
     if (data_len > SPIOPEN_MAX_PAYLOAD)
         return 0;
     uint32_t len = (uint32_t)CHAINBUS_RX_HEADER_LEN + (uint32_t)data_len + SPIOPEN_CRC_BYTES;
-    if (len > SPIOPEN_FRAME_BUF_SIZE)
+    if (len > (uint32_t)(SPIOPEN_FRAME_BUF_SIZE - SPIOPEN_FRAME_CONTENT_OFFSET))
         return 0;
     return (uint8_t)len;
 }
 
-/** Header phase done: buf[0..3] filled; start body DMA. */
+/** Header phase done: buf[FRAME_CONTENT_OFFSET..+3] filled; start body DMA. */
 static void chainbus_rx_header_cb(void)
 {
     BaseType_t woken = pdFALSE;
-    s_chainbus_rx_frame_len = chainbus_rx_frame_len_from_header(s_chainbus_rx_buf);
+    const uint8_t *header = s_chainbus_rx_buf + SPIOPEN_FRAME_CONTENT_OFFSET;
+    s_chainbus_rx_frame_len = chainbus_rx_frame_len_from_header(header);
     if (s_chainbus_rx_frame_len == 0) {
-        /* Debug: pass header-only frame to queue so invalid headers can be inspected. */
-        send_to_chainbus_rx_from_isr(s_chainbus_rx_buf, CHAINBUS_RX_HEADER_LEN, &woken);
+        send_to_chainbus_rx_from_isr(s_chainbus_rx_buf, (uint8_t)(SPIOPEN_FRAME_CONTENT_OFFSET + CHAINBUS_RX_HEADER_LEN), &woken);
         s_chainbus_rx_buf = NULL;
-        bus_rx_pio_restart_chainbus();  /* Re-sync on next preamble */
+        bus_rx_pio_restart_chainbus();
         xSemaphoreGiveFromISR(s_chainbus_rx_done_sem, &woken);
     } else {
         uint32_t body_bytes = (uint32_t)(s_chainbus_rx_frame_len - CHAINBUS_RX_HEADER_LEN);
         dma_channel_set_read_addr(s_dma_ch_body, (void *)&pio0_hw->rxf[s_sm], false);
-        dma_channel_set_write_addr(s_dma_ch_body, s_chainbus_rx_buf + CHAINBUS_RX_HEADER_LEN, false);
+        dma_channel_set_write_addr(s_dma_ch_body, s_chainbus_rx_buf + SPIOPEN_FRAME_CONTENT_OFFSET + CHAINBUS_RX_HEADER_LEN, false);
         dma_channel_set_trans_count(s_dma_ch_body, body_bytes, true);
     }
     portYIELD_FROM_ISR(woken);
@@ -77,10 +77,11 @@ static void chainbus_rx_header_cb(void)
 static void chainbus_rx_body_cb(void)
 {
     BaseType_t woken = pdFALSE;
-    bus_rx_pio_restart_chainbus();  /* Re-sync on next preamble */
+    bus_rx_pio_restart_chainbus();
     if (s_chainbus_rx_buf != NULL && s_chainbus_rx_frame_len != 0) {
-        if (spiopen_crc32_verify_frame(s_chainbus_rx_buf, (size_t)s_chainbus_rx_frame_len))
-            send_to_chainbus_rx_from_isr(s_chainbus_rx_buf, s_chainbus_rx_frame_len, &woken);
+        const uint8_t *content = s_chainbus_rx_buf + SPIOPEN_FRAME_CONTENT_OFFSET;
+        if (spiopen_crc32_verify_frame(content, (size_t)s_chainbus_rx_frame_len))
+            send_to_chainbus_rx_from_isr(s_chainbus_rx_buf, (uint8_t)(SPIOPEN_PREAMBLE_BYTES + s_chainbus_rx_frame_len), &woken);
         else
             frame_pool_put(s_chainbus_rx_buf);
         s_chainbus_rx_buf = NULL;
@@ -100,7 +101,7 @@ static void chainbus_rx_task(void *pvParameters)
         }
         s_chainbus_rx_buf = buf;
         dma_channel_set_read_addr(s_dma_ch_header, (void *)&pio0_hw->rxf[s_sm], false);
-        dma_channel_set_write_addr(s_dma_ch_header, s_chainbus_rx_buf, false);
+        dma_channel_set_write_addr(s_dma_ch_header, s_chainbus_rx_buf + SPIOPEN_FRAME_CONTENT_OFFSET, false);
         dma_channel_set_trans_count(s_dma_ch_header, (uint32_t)CHAINBUS_RX_HEADER_LEN, true);
 
         (void)xSemaphoreTake(s_chainbus_rx_done_sem, portMAX_DELAY);

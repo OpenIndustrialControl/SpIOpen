@@ -19,6 +19,8 @@ void frame_pool_init(void)
     for (size_t i = 0; i < FRAME_POOL_SIZE; i++) {
         uint8_t *ptr = s_buffers[i];
         configASSERT(ptr != NULL);
+        ptr[0] = SPIOPEN_PREAMBLE;
+        ptr[1] = SPIOPEN_PREAMBLE;
         BaseType_t ok = xQueueSend(s_free_queue, &ptr, 0);
         configASSERT(ok == pdTRUE);
     }

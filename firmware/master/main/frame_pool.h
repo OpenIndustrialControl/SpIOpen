@@ -6,8 +6,9 @@
 
 #include <stdint.h>
 #include "freertos/FreeRTOS.h"
+#include "spiopen_protocol.h"
 
-#define SPIOPEN_FRAME_BUF_SIZE  80
+#define SPIOPEN_FRAME_BUF_SIZE  (SPIOPEN_FRAME_BUF_MIN + 6)  /* 80: min 74 + slack */
 #define FRAME_POOL_SIZE         16
 
 void frame_pool_init(void);

@@ -7,9 +7,9 @@
 
 #include <stdint.h>
 #include "FreeRTOS.h"
+#include "spiopen_protocol.h"
 
-/* Max frame length: chainbus format 7 + 64 + 4 = 75; round up for alignment. */
-#define SPIOPEN_FRAME_BUF_SIZE  80
+#define SPIOPEN_FRAME_BUF_SIZE  (SPIOPEN_FRAME_BUF_MIN + 6)  /* 80: preamble + header + max payload + CRC + slack */
 
 #define FRAME_POOL_SIZE         16
 
