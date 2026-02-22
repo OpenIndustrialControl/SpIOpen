@@ -52,6 +52,10 @@ PIO RX ports use a **MOSI-first** group: pin 0 = MOSI (data), pin 1 = CLK; GPIOs
 
 **Node ID:** Default 1 (LSS can be added later).
 
+## Phase 2 master (ESP32-C3 Zero)
+
+The CANopen master (NMT master, SDO client, LSS master) with CiA 309-3 ASCII gateway is implemented on the **Waveshare ESP32-C3 Zero**. Pin assignment, wiring, and build instructions: [firmware/master/README.md](../firmware/master/README.md).
+
 ## Phase 3: Master + multiple slaves
 
 ESP32 XIAO master in [firmware/master/](../firmware/master/); multiple RP2040 slaves; LSS and TTL on chain.
