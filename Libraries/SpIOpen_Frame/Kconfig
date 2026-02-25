@@ -1,0 +1,16 @@
+menu "SpIOpen Frame Library"
+
+    config SPIOPEN_FRAME_CAN_FD_ENABLE
+        bool "Support CAN-FD Frames"
+        default y
+        help
+            This enables support for CAN-FD frames, which increase the max paylaod size from 8 to 64 bytes. This is required to tunnel CAN-FD frames. This is very convenient when you have large PDOs and does not take too many extra resources with a well imlemented driver.
+
+    config SPIOPEN_FRAME_CAN_XL_ENABLE
+        bool "Support CAN-XL Frames"
+        default y
+        depends on SPIOPEN_FRAME_CAN_FD_ENABLE #XL Frames require FD frame features when tunneling
+        help
+            This enables support for CAN-XL frames, which increases the max payload size to 2048 bytes. This is required to tunnel CAN-FD frames and useful to tunnel ethernet frames. It can have negative effects on performance.
+
+endmenu

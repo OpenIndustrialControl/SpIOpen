@@ -1,0 +1,7 @@
+menu SpIOpen Protocol Features
+
+config SPIOPEN_CONFIGURABLE_FRAME_POOL
+    bool "Support configurable (non-static) spiopen frame pool"
+    default n
+    help
+        This allows a setting on the device to determine the size of the spiopen frame router pool, but requires heap allocation of the frame pool at initialization.
