@@ -1,0 +1,23 @@
+{
+    "name": "SpIOpen Dev Container",
+    "dockerFile": "dockerfile",
+    "extensions": [
+      "ms-vscode.cpptools",
+      "ms-vscode.cmake-tools"
+    ],
+    "settings": {
+      "lldb.launch.terminal": "integrated",
+      "cmake.configureOnOpen": true,  
+      "terminal.integrated.shell.linux": "/bin/bash"
+    },
+        "postCreateCommand": [
+          "/bin/bash",
+          "-c",
+          "export LC_ALL=C.UTF-8 && export LANG=C.UTF-8",
+          "apt-get update && apt-get install -y gdb-multiarch"
+    ],
+    "remoteEnv": {
+    "FREERTOS_PATH": "${containerWorkspaceFolder}/modules/FreeRTOS", 
+    "FREERTOS_POSIX_PATH": "${containerWorkspaceFolder}/modules/FreeRTOS-POSIX"
+    }
+  }

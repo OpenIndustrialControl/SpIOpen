@@ -1,0 +1,35 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "SpIOpen Frame KConfig",
+            "type": "shell",
+            "command": "/bin/bash",
+            "args": [
+              "-l",
+              "-i",
+              "-c",
+              "cd \"${workspaceFolder}/Libraries/SpIOpen_Frame\" && menuconfig"
+            ],
+            "group": "build",
+            "problemMatcher": [],
+            "presentation": {
+              "reveal": "always",
+              "panel": "dedicated",
+              "focus": true,
+              "clear": true
+            },
+            "runOptions": {
+              "reevaluateOnRerun": true
+            }
+        },
+         {
+            "label": "SpIOpen Frame Build",
+            "type": "shell",
+            "command": "cd Libraries/SpIOpen_Frame && mkdir -p build && cd build && cmake .. && cmake --build .",
+            "group": "build",
+            "problemMatcher": ["$gcc"],
+            "presentation": { "reveal": "always" }
+         }
+    ]
+}

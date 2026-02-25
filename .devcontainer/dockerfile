@@ -1,0 +1,58 @@
+FROM ubuntu:22.04
+
+# Install base tools
+RUN apt-get update && apt-get upgrade -y && \
+    apt-get install -y \
+    build-essential \
+    cmake \
+    git \
+    python3 \
+    python3-pip \
+    python3-venv \
+    ninja-build \
+    gperf \
+    dfu-util \
+    libncurses5-dev \
+    libncursesw5-dev \
+    flex \
+    bison \
+    gperf \
+    wget \
+    unzip \
+    libgtest-dev \  
+    googletest && \ 
+    cd /usr/src/googletest && cmake . && make && cp lib/*.a /usr/lib && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install Kconfig tools (for menuconfig, guiconfig, etc.)
+RUN pip3 install kconfiglib
+
+# Install ARM toolchain for Pi Pico (RP2040) and general ARM
+# RUN apt-get update && apt-get install -y gcc-arm-none-eabi gdb-multiarch && \
+#     # Pico SDK (clone and set path)
+#     git clone -b master https://github.com/raspberrypi/pico-sdk.git /opt/pico-sdk && \
+#     cd /opt/pico-sdk && git submodule update --init
+
+# Install toolchain for Pi Compute Module (ARM Linux cross-compile, if not native)
+# RUN apt-get install -y gcc-arm-linux-gnueabihf
+
+# Install ESP-IDF for ESP32
+# ENV IDF_PATH=/opt/esp-idf
+# RUN git clone -b v5.1.2 --recursive https://github.com/espressif/esp-idf.git $IDF_PATH && \
+#     cd $IDF_PATH && \
+#     ./install.sh esp32 && \
+#     echo "source $IDF_PATH/export.sh" >> /root/.bashrc
+
+# If using Zephyr: Install west and Zephyr base
+# Uncomment if your project uses Zephyr (supports all your boards with Kconfig)
+# RUN pip3 install west && \
+#     west init /opt/zephyrproject && \
+#     cd /opt/zephyrproject && west update && \
+#     west zephyr-export && \
+#     pip3 install -r ~/zephyrproject/zephyr/scripts/requirements.txt && \
+#     echo "source /opt/zephyrproject/.venv/bin/activate" >> /root/.bashrc && \
+#     echo "source /opt/zephyrproject/zephyr/zephyr-env.sh" >> /root/.bashrc
+
+# ENV PICO_SDK_PATH=/opt/pico-sdk
+ENV GTEST_PATH="/usr/src/googletest/googlemock/gtest:${PATH}"
+WORKDIR /workspace
