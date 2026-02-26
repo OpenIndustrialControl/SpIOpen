@@ -14,6 +14,7 @@ RUN apt-get update && apt-get upgrade -y && \
     dfu-util \
     libncurses5-dev \
     libncursesw5-dev \
+    clang-format \
     flex \
     bison \
     gperf \
@@ -25,7 +26,7 @@ RUN apt-get update && apt-get upgrade -y && \
     rm -rf /var/lib/apt/lists/*
 
 # Install Kconfig tools (for menuconfig, guiconfig, etc.)
-RUN pip3 install kconfiglib
+RUN pip3 install kconfiglib cpplint cmake-format
 
 # Install ARM toolchain for Pi Pico (RP2040) and general ARM
 # RUN apt-get update && apt-get install -y gcc-arm-none-eabi gdb-multiarch && \

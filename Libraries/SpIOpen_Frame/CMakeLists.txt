@@ -27,6 +27,11 @@ target_include_directories(spiopen_frame PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+# ETL (Embedded Template Library) for CRC - header-only, private to this library
+target_include_directories(spiopen_frame PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../modules/embeded-template-library/include
+)
+
 option(SPIOPEN_FRAME_BUILD_TESTS "Build unit tests for the library" OFF)
 if(SPIOPEN_FRAME_BUILD_TESTS)
     enable_testing()
