@@ -20,7 +20,7 @@ namespace spiopen {
  */
 class FrameBuffer {
    public:
-    FrameBuffer(const uint8_t *buffer, const size_t buffer_length) : buffer_(buffer), buffer_length_(buffer_length) {}
+    FrameBuffer(uint8_t *buffer, size_t buffer_length) : buffer_(buffer), buffer_length_(buffer_length) {}
     ~FrameBuffer();
 
     // Functions that synchronize the internal frame object with the internal buffer
@@ -33,7 +33,9 @@ class FrameBuffer {
      *
      * @return FrameWriteResult structure containing the error code, payload padding added, and frame padding added
      */
-    FrameWriteResult WriteInternalBuffer() { return FrameWriter::WriteFrame(&frame_, buffer_, buffer_length_); }
+    frame_writer::FrameWriteResult WriteInternalBuffer() {
+        return frame_writer::WriteFrame(&frame_, buffer_, buffer_length_);
+    }
 
     /**
      * @brief Updates the internal frame object based on the internal buffer
@@ -45,7 +47,9 @@ class FrameBuffer {
      * state.
      * @return FrameReadResult structure containing the error code and DLC correction flag
      */
-    FrameReadResult ReadInternalBuffer() { return FrameReader::ReadFrame(buffer_, buffer_length_, &frame_); }
+    frame_reader::FrameReadResult ReadInternalBuffer() {
+        return frame_reader::ReadFrame(buffer_, buffer_length_, &frame_);
+    }
 
     // Functions that set the internal fields based on external data
     /**
@@ -64,10 +68,10 @@ class FrameBuffer {
      * received, negative for missing bits never received)
      * @return FrameReadResult structure containing the error code and DLC correction flag
      */
-    FrameReadResult LoadAndReadInternalBuffer(const uint8_t *buffer, size_t length, size_t buffer_offset = 0,
-                                              int8_t bit_slip_count = 0) {
-        return FrameReader::ReadAndCopyFrame(buffer, length, &frame_, buffer_, buffer_length_, buffer_offset,
-                                             bit_slip_count);
+    frame_reader::FrameReadResult LoadAndReadInternalBuffer(const uint8_t *buffer, size_t length,
+                                                            size_t buffer_offset = 0, int8_t bit_slip_count = 0) {
+        return frame_reader::ReadAndCopyFrame(buffer, length, &frame_, buffer_, buffer_length_, buffer_offset,
+                                              bit_slip_count);
     }
 
     /**
@@ -82,7 +86,10 @@ class FrameBuffer {
      * @param frame Reference to the Frame object to load and write to the internal buffer
      * @return FrameWriteResult structure containing the error code, payload padding added, and frame padding added
      */
-    FrameWriteResult LoadAndWriteInternalBuffer(Frame const &frame);
+    frame_writer::FrameWriteResult LoadFrameAndWriteInternalBuffer(Frame const &frame) {
+        frame_ = frame;
+        return WriteInternalBuffer();
+    }
 
     // Getters for the internal fields
     Frame &GetFrame() { return frame_; }
@@ -91,8 +98,8 @@ class FrameBuffer {
 
    private:
     Frame frame_;
-    const uint8_t *buffer_;
-    const size_t buffer_length_;
+    uint8_t *buffer_;
+    size_t buffer_length_;
 };
 
 }  // namespace spiopen

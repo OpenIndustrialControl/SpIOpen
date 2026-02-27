@@ -9,7 +9,7 @@ SPDX-License-Identifier: Apache-2.0
 #include "spiopen_frame.h"
 #include "spiopen_frame_format.h"
 
-namespace spiopen::FrameWriter {
+namespace spiopen::frame_writer {
 /* Constants used to communciate different errors that occur while writing a SpIOpen frame to a byte array buffer*/
 static constexpr int FRAME_WRITE_ERROR_INVALID_PAYLOAD_LENGTH = -1;   // The data length is invalid for the frame type
 static constexpr int FRAME_WRITE_ERROR_INVALID_PAYLOAD_POINTER = -2;  // The payload pointer is invalid or NULL
@@ -37,4 +37,4 @@ struct FrameWriteResult {
  * @return FrameWriteResult structure containing the error code, payload padding added, and frame padding added
  */
 static FrameWriteResult WriteFrame(const Frame *frame, uint8_t *buffer, size_t buffer_length);
-}  // namespace spiopen::FrameWriter
+}  // namespace spiopen::frame_writer

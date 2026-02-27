@@ -34,69 +34,29 @@ class Frame final {
         uint32_t addressing_field;
     } XLControl;
 
-    /* Constructor and destructor for the Frame class*/
+    /* Fields that represent the individual elements of the SpIOpen frame*/
    public:
-    Frame();
+    uint32_t can_identifier;  // 11 or 29 bit CAN identifier
+    Flags can_flags;
+    uint8_t time_to_live;  // Time to Live counter, only populated if TTL flag is set
 #ifdef CONFIG_SPIOPEN_FRAME_CAN_XL_ENABLE
-    /**
-     * @brief Constructor for the Frame class
-     * @param can_identifier 11 or 29 bit CAN identifier
-     * @param can_flags CAN flags
-     * @param time_to_live Time to Live counter, only populated if TTL flag is set
-     * @param xl_control XL control fields, only populated if XLF flag is set
-     * @param payload_data Pointer to the payload data, only populated if payload length is non-zero. Structure has no
-     * ownership of the pointer.
-     * @param payload_length decoded payload length in bytes
-     */
-    Frame(uint32_t can_identifier, Flags can_flags, uint8_t time_to_live, XLControl xl_control, uint8_t *payload_data,
-          size_t payload_length)
-        : can_identifier(can_identifier),
-          can_flags(can_flags),
-          time_to_live(time_to_live),
-          xl_control(xl_control),
-          payload_data(payload_data),
-          payload_length(payload_length) {}
-#else
-    /**
-     * @brief Constructor for the Frame class
-     * @param can_identifier 11 or 29 bit CAN identifier
-     * @param can_flags CAN flags
-     * @param time_to_live Time to Live counter, only populated if TTL flag is set
-     * @param payload_data Pointer to the payload data, only populated if payload length is non-zero. Structure has no
-     * ownership of the pointer.
-     * @param payload_length decoded payload length in bytes
-     */
-    Frame(uint32_t can_identifier, Flags can_flags, uint8_t time_to_live, uint8_t *payload_data, size_t payload_length)
-        : can_identifier(can_identifier),
-          can_flags(can_flags),
-          time_to_live(time_to_live),
-          payload_data(payload_data),
-          payload_length(payload_length) {}
+    XLControl xl_control;  // XL control fields, only populated if XLF flag is set
 #endif
-    ~Frame();
+    uint8_t *payload_data;  // Pointer to the payload data, only populated if payload length is non-zero. Structure has
+                            // no ownership of the pointer.
+    size_t payload_length;  // decoded payload length in bytes
 
-    /* Getters for the Frame class fields (inline for efficiency) */
-    // public:
-    //     inline uint32_t GetCanIdentifier() const { return can_identifier; }
-    //     inline uint8_t GetTimeToLive() const { return time_to_live; }
-    //     #ifdef CONFIG_SPIOPEN_FRAME_CAN_XL_ENABLE
-    //     inline XLControl GetXlControl() const { return xl_control; }
-    //     #endif
-    //     inline uint8_t *GetPayloadData() const { return payload_data; }
-    //     inline size_t GetPayloadLength() const { return payload_length; }
-    /* Getters for the CAN flags (inline for efficiency) */
-   public:
-    inline bool GetFlagRTR() const { return can_flags.RTR; }
-    inline bool GetFlagBRS() const { return can_flags.BRS; }
-    inline bool GetFlagESI() const { return can_flags.ESI; }
-    inline bool GetFlagIDE() const { return can_flags.IDE; }
-    inline bool GetFlagFDF() const { return can_flags.FDF; }
-    inline bool GetFlagXLF() const { return can_flags.XLF; }
-    inline bool GetFlagTTL() const { return can_flags.TTL; }
-    inline bool GetFlagWA() const { return can_flags.WA; }
+    /* Constructor and destructor for the Frame class*/
+    inline Frame()
+        : can_identifier(0U),
+          can_flags({}),
+          time_to_live(0U),
+          xl_control({}),
+          payload_data(nullptr),
+          payload_length(0U) {}
+    inline ~Frame() = default;
 
-    /* Get other constant information about the Frame */
-   public:
+    /* Get other information about the Frame that can be calcualted from the fields*/ public:
     /**
      * @brief Calculate the length of the header (not including preamble), from
      *        the format header until right before the payload.
@@ -132,57 +92,33 @@ class Frame final {
         return frame_length;
     }
 
-    /* Helper Functions that modify the Frame class*/
-   public:
-#ifdef CONFIG_SPIOPEN_FRAME_CAN_XL_ENABLE
-    /**
-     * @brief Sets all internal fields based on the provided inputs
-     * @param can_identifier 11 or 29 bit CAN identifier
-     * @param can_flags CAN flags
-     * @param time_to_live Time to Live counter, only populated if TTL flag is set
-     * @param xl_control XL control fields, only populated if XLF flag is set
-     * @param payload_data Pointer to the payload data, only populated if payload length is non-zero. Structure has no
-     * ownership of the pointer.
-     * @param payload_length decoded payload length in bytes
-     */
-    void SetFrame(uint32_t can_identifier, Flags can_flags, uint8_t time_to_live, XLControl xl_control,
-                  uint8_t *payload_data, size_t payload_length);
-#else
-    /**
-     * @brief Sets all internal fields based on the provided inputs
-     * @param can_identifier 11 or 29 bit CAN identifier
-     * @param can_flags CAN flags
-     * @param time_to_live Time to Live counter, only populated if TTL flag is set
-     * @param payload_data Pointer to the payload data, only populated if payload length is non-zero. Structure has no
-     * ownership of the pointer.
-     * @param payload_length decoded payload length in bytes
-     */
-    void SetFrame(uint32_t can_identifier, Flags can_flags, uint8_t time_to_live, uint8_t *payload_data,
-                  size_t payload_length);
-#endif
-
     /**
      * @brief Clears all frame fields to their default zero/empty state.
      */
-    void Reset();
+    inline void Reset() {
+        can_identifier = 0U;
+        can_flags = {};
+        time_to_live = 0U;
+#ifdef CONFIG_SPIOPEN_FRAME_CAN_XL_ENABLE
+        xl_control = {};
+#endif
+        payload_data = nullptr;
+        payload_length = 0U;
+    }
 
     /**
      * @brief Handles decrementing the Time to Live counter if the TTL flag is set
      * @return True if the counter is decremented and is now 0, false if TTL flag is not set or counter is above 0
      */
-    bool DecrementAndCheckIfTimeToLiveExpired();
-
-    /* Fields that represent the individual elements of the SpIOpen frame*/
-   public:
-    uint32_t can_identifier;  // 11 or 29 bit CAN identifier
-    Flags can_flags;
-    uint8_t time_to_live;  // Time to Live counter, only populated if TTL flag is set
-#ifdef CONFIG_SPIOPEN_FRAME_CAN_XL_ENABLE
-    XLControl xl_control;  // XL control fields, only populated if XLF flag is set
-#endif
-    uint8_t *payload_data;  // Pointer to the payload data, only populated if payload length is non-zero. Structure has
-                            // no ownership of the pointer.
-    size_t payload_length;  // decoded payload length in bytes
+    inline bool DecrementAndCheckIfTimeToLiveExpired() {
+        if (!can_flags.TTL) {
+            return false;
+        }
+        if (time_to_live > 0U) {
+            --time_to_live;
+        }
+        return (time_to_live == 0U);
+    }
 };
 
 }  // namespace spiopen

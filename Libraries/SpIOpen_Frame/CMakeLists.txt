@@ -17,10 +17,16 @@ endif()
 
 add_compile_options(-imacros${CMAKE_CURRENT_SOURCE_DIR}/include/generated/autoconf.h)
 
-# Collect all files for this library and create the library
-file(GLOB_RECURSE SUBMODULE_SOURCES "src/*.cpp")
-file(GLOB_RECURSE SUBMODULE_HEADERS "include/*.h" "include/*.hpp")
-add_library(spiopen_frame STATIC ${SUBMODULE_SOURCES} ${SUBMODULE_HEADERS})
+# Collect library sources
+file(GLOB SPIOPEN_FRAME_SOURCES "src/*.cpp")
+file(GLOB SPIOPEN_FRAME_HEADERS "include/*.h" "include/*.hpp")
+
+# Algorithm implementation is chosen at configure time
+set(SPIOPEN_FRAME_ALGORITHM_DEFAULT_IMPL "${CMAKE_CURRENT_SOURCE_DIR}/src/default/spiopen_frame_algorithms.cpp")
+set(SPIOPEN_FRAME_ALGORITHM_SOURCE "${SPIOPEN_FRAME_ALGORITHM_DEFAULT_IMPL}" CACHE FILEPATH
+    "Implementation .cpp for algorithm facade (CRC/SECDED). Replace with a platform-specific file for hardware acceleration. See AlgorithmBackend.md.")
+
+add_library(spiopen_frame STATIC ${SPIOPEN_FRAME_SOURCES} ${SPIOPEN_FRAME_ALGORITHM_SOURCE} ${SPIOPEN_FRAME_HEADERS})
 
 # Let other parts of the project see the public includes
 target_include_directories(spiopen_frame PUBLIC 

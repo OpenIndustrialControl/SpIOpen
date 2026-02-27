@@ -41,7 +41,7 @@ The Data Format of a SpIOpen Frame:
 * [0 or 1 Bytes] Padding : 0x00 IF
 * [2 or 4 Bytes] CRC
   * CRC16 if Data Length <= 8 (CRC-16-CCITT)
-  * CRC32 if Data Length > 8 (CRC-32/ISO-HDLC)
+  * CRC32 if Data Length > 8 (CRC-32/MPEG-2, straight, non-reflected)
 
 Notes:
 * Reading the first 4 bytes of data after the preamble is always possible (6 is the minimum) and can always determine the length of the entire frame

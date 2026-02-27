@@ -14,8 +14,9 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(googletest)
 
-add_executable(spiopen_frame_tests spiopen_frame_tests.cpp)
-target_link_libraries(spiopen_frame_tests PRIVATE gtest gtest_main)]
+file(GLOB SPIOPEN_FRAME_TESTS_SOURCES "*.cpp")
+add_executable(spiopen_frame_tests ${SPIOPEN_FRAME_TESTS_SOURCES})
+target_link_libraries(spiopen_frame_tests PRIVATE spiopen_frame gtest gtest_main)
 
 # automatically discover CTest tests in the project
 include(GoogleTest)

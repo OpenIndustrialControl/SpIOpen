@@ -11,11 +11,10 @@ SPDX-License-Identifier: Apache-2.0
 #include <cstdint>
 #include <cstring>
 
-#include "etl/crc16_ccitt.h"
-#include "etl/crc32_mpeg2.h"
+#include "spiopen_frame_algorithms.h"
 #include "spiopen_frame_format.h"
 
-namespace spiopen::FrameWriter {
+namespace spiopen::frame_writer {
 
 using namespace spiopen::format;
 
@@ -124,8 +123,12 @@ static int WriteFormatHeader(const Frame* frame, uint8_t dlc_low_nibble, uint8_t
         (frame->can_flags.FDF ? HEADER_FDF_MASK : 0U) | (frame->can_flags.XLF ? HEADER_XLF_MASK : 0U) |
         (frame->can_flags.TTL ? HEADER_TTL_MASK : 0U));
     const uint8_t high = frame->can_flags.WA ? HEADER_WA_MASK : 0U;
-    buffer[offset++] = high;
-    buffer[offset++] = low;
+
+    const uint16_t raw_header11 =
+        static_cast<uint16_t>(low) | static_cast<uint16_t>((static_cast<uint16_t>(high & HEADER_WA_MASK)) << 8U);
+    const uint16_t encoded_header = algorithms::Secded16Encode11(raw_header11);
+    buffer[offset++] = static_cast<uint8_t>((encoded_header >> 8U) & 0xFFU);
+    buffer[offset++] = static_cast<uint8_t>(encoded_header & 0xFFU);
     return 0;
 }
 
@@ -160,9 +163,10 @@ static int WriteXlControl(const Frame* frame, uint8_t* buffer, size_t buffer_len
         return FRAME_WRITE_ERROR_BUFFER_TOO_SHORT;
     }
     Frame::XLControl xl = frame->xl_control;
-    const size_t plen = frame->payload_length;
-    buffer[offset++] = static_cast<uint8_t>((plen >> 8U) & 0xFFU);
-    buffer[offset++] = static_cast<uint8_t>(plen & 0xFFU);
+    const uint16_t encoded_xl_dlc =
+        algorithms::Secded16Encode11(static_cast<uint16_t>(frame->payload_length & 0x07FFU));
+    buffer[offset++] = static_cast<uint8_t>((encoded_xl_dlc >> 8U) & 0xFFU);
+    buffer[offset++] = static_cast<uint8_t>(encoded_xl_dlc & 0xFFU);
     buffer[offset++] = xl.payload_type;
     buffer[offset++] = xl.virtual_can_network_id;
     buffer[offset++] = static_cast<uint8_t>((xl.addressing_field >> 24U) & 0xFFU);
@@ -216,17 +220,13 @@ static int WriteCrc(const uint8_t* crc_region_start, size_t crc_region_length, b
         return FRAME_WRITE_ERROR_BUFFER_TOO_SHORT;
     }
     if (use_crc32) {
-        etl::crc32_mpeg2 crc;
-        crc.add(crc_region_start, crc_region_start + crc_region_length);
-        uint32_t v = crc.value();
+        const uint32_t v = algorithms::ComputeCrc32(crc_region_start, crc_region_length);
         buffer[offset++] = static_cast<uint8_t>((v >> 24U) & 0xFFU);
         buffer[offset++] = static_cast<uint8_t>((v >> 16U) & 0xFFU);
         buffer[offset++] = static_cast<uint8_t>((v >> 8U) & 0xFFU);
         buffer[offset++] = static_cast<uint8_t>(v & 0xFFU);
     } else {
-        etl::crc16_ccitt crc;
-        crc.add(crc_region_start, crc_region_start + crc_region_length);
-        uint16_t v = static_cast<uint16_t>(crc.value());
+        const uint16_t v = algorithms::ComputeCrc16Ccitt(crc_region_start, crc_region_length);
         buffer[offset++] = static_cast<uint8_t>((v >> 8U) & 0xFFU);
         buffer[offset++] = static_cast<uint8_t>(v & 0xFFU);
     }
@@ -345,4 +345,4 @@ FrameWriteResult WriteFrame(const Frame* frame, uint8_t* buffer, size_t buffer_l
     return result;
 }
 
-}  // namespace spiopen::FrameWriter
+}  // namespace spiopen::frame_writer
