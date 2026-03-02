@@ -184,7 +184,7 @@ static int ValidateCRC(const uint8_t* buffer, const size_t buffer_length, const 
     if (crc_size == SHORT_CRC_SIZE) {
         const uint16_t received_crc = static_cast<uint16_t>((static_cast<uint16_t>(buffer[cursor]) << 8U) |
                                                             static_cast<uint16_t>(buffer[cursor + 1U]));
-        const uint16_t computed_crc = algorithms::ComputeCrc16Ccitt(buffer + crc_region_start, crc_region_len);
+        const uint16_t computed_crc = algorithms::ComputeCrc16(buffer + crc_region_start, crc_region_len);
         if (computed_crc != received_crc) {
             return FRAME_PARSE_ERROR_CRC_MISMATCH;
         }

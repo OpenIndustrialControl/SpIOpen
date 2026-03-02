@@ -32,6 +32,14 @@
             "presentation": { "reveal": "always" }
          },
          {
+            "label": "SpIOpen Frame Build Tests Debug",
+            "type": "shell",
+            "command": "cd Libraries/SpIOpen_Frame && mkdir -p build-tests && cd build-tests && cmake .. -D SPIOPEN_FRAME_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Debug && cmake --build . --config Debug",
+            "group": "build",
+            "problemMatcher": ["$gcc"],
+            "presentation": { "reveal": "always" }
+         },
+         {
             "label": "SpIOpen Frame Build and Test",
             "type": "shell",
             "command": "cd Libraries/SpIOpen_Frame && mkdir -p build-tests && cd build-tests && cmake .. -D SPIOPEN_FRAME_BUILD_TESTS=ON && cmake --build . && ctest --output-on-failure",

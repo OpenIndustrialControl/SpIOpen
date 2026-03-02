@@ -7,28 +7,43 @@
 
 using namespace spiopen::algorithms;
 
-TEST(SpIOpenAlgorithms, DefaultCrcKnownVectors) {
-    static constexpr uint8_t kData[] = {'1', '2', '3', '4', '5', '6', '7', '8', '9'};
+TEST(SpIOpenAlgorithms, CrcEncodingAccuracy) {
+    static constexpr uint8_t example_data_to_crc[] = {'1', '2', '3', '4', '5', '6', '7', '8', '9'};
+    static constexpr uint16_t expected_crc16 = 0x29B1U;
+    static constexpr uint32_t expected_crc32 = 0x0376E6E7U;
 
-    // CRC16-CCITT and CRC32/MPEG-2 known vectors for "123456789".
-    EXPECT_EQ(spiopen::algorithms::ComputeCrc16Ccitt(kData, sizeof(kData)), 0x29B1U);
-    EXPECT_EQ(spiopen::algorithms::ComputeCrc32(kData, sizeof(kData)), 0x0376E6E7U);
+    EXPECT_EQ(ComputeCrc16(example_data_to_crc, sizeof(example_data_to_crc)), expected_crc16);
+    EXPECT_EQ(ComputeCrc32(example_data_to_crc, sizeof(example_data_to_crc)), expected_crc32);
+}
+
+TEST(SpIOpenAlgorithms, SecdedEncodingAccuracy) {
+    static constexpr uint16_t kRaw = 0x0123U;  // 0b001'0010'0011
+    // check with http://www.mathaddict.net/hamming.htm, but note that they put the parity bits at LSb and we put them
+    // at MSb
+    static constexpr uint16_t expected_encoded = 0b1000'1001'0010'0011;
+    const uint16_t encoded = Secded16Encode11(kRaw);
+    EXPECT_EQ(encoded, expected_encoded);
 }
 
 TEST(SpIOpenAlgorithms, SecdedRoundTrip) {
-    for (uint16_t raw11 = 0U; raw11 <= 0x07FFU; raw11 = static_cast<uint16_t>(raw11 + 73U)) {
+    static constexpr uint16_t bitmask_11 = 0x07FFU;
+    // loop by a prime number that is approx log(2^11) to cover most of the possible bit organizations
+    for (uint16_t raw11 = 0U; raw11 <= bitmask_11; raw11 = static_cast<uint16_t>(raw11 + 73U)) {
         const uint16_t encoded = spiopen::algorithms::Secded16Encode11(raw11);
         const Secded16DecodeResult decoded = spiopen::algorithms::Secded16Decode11(encoded);
-        EXPECT_EQ(decoded.data11, raw11);
+        EXPECT_EQ(encoded & bitmask_11, raw11);  // verify that the least significant 11 bits remain the same
         EXPECT_FALSE(decoded.corrected);
         EXPECT_FALSE(decoded.uncorrectable);
+        EXPECT_EQ(decoded.data11, raw11);
     }
 }
 
 TEST(SpIOpenAlgorithms, SecdedSingleBitCorrection) {
+    // alternating bits within the 11 bits of relevant data
     static constexpr uint16_t kRaw = 0x0555U;
     const uint16_t encoded = spiopen::algorithms::Secded16Encode11(kRaw);
 
+    // test all possible single bit corruption
     for (uint8_t bit = 0U; bit < 16U; ++bit) {
         const uint16_t corrupted = static_cast<uint16_t>(encoded ^ (1U << bit));
         const Secded16DecodeResult decoded = spiopen::algorithms::Secded16Decode11(corrupted);
@@ -39,9 +54,14 @@ TEST(SpIOpenAlgorithms, SecdedSingleBitCorrection) {
 }
 
 TEST(SpIOpenAlgorithms, SecdedDoubleBitDetect) {
-    static constexpr uint16_t kRaw = 0x0123U;
+    static constexpr uint16_t kRaw = 0x0555U;
     const uint16_t encoded = spiopen::algorithms::Secded16Encode11(kRaw);
-    const uint16_t corrupted = static_cast<uint16_t>(encoded ^ 0x0003U);
-    const Secded16DecodeResult decoded = spiopen::algorithms::Secded16Decode11(corrupted);
-    EXPECT_TRUE(decoded.uncorrectable);
+
+    for (uint8_t i = 0U; i < 16U; ++i) {
+        for (size_t j = static_cast<size_t>(i) + 1U; j < 16U; ++j) {
+            const uint16_t corrupted = static_cast<uint16_t>(encoded ^ (1U << i) ^ (1U << j));
+            const Secded16DecodeResult decoded = spiopen::algorithms::Secded16Decode11(corrupted);
+            EXPECT_TRUE(decoded.uncorrectable);
+        }
+    }
 }

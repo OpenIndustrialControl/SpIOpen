@@ -226,7 +226,7 @@ static int WriteCrc(const uint8_t* crc_region_start, size_t crc_region_length, b
         buffer[offset++] = static_cast<uint8_t>((v >> 8U) & 0xFFU);
         buffer[offset++] = static_cast<uint8_t>(v & 0xFFU);
     } else {
-        const uint16_t v = algorithms::ComputeCrc16Ccitt(crc_region_start, crc_region_length);
+        const uint16_t v = algorithms::ComputeCrc16(crc_region_start, crc_region_length);
         buffer[offset++] = static_cast<uint8_t>((v >> 8U) & 0xFFU);
         buffer[offset++] = static_cast<uint8_t>(v & 0xFFU);
     }

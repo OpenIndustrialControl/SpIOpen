@@ -2,10 +2,11 @@
     "name": "SpIOpen Dev Container",
     "dockerFile": "dockerfile",
     "extensions": [
-      "ms-vscode.cpptools",
       "ms-vscode.cmake-tools",
       "cnshenj.vscode-task-manager",
-      "xaver.clang-format"
+      "xaver.clang-format",
+      "anysphere.cpptools",
+      "matepek.vscode-catch2-test-adapter"
     ],
     "settings": {
       "lldb.launch.terminal": "integrated",

@@ -21,9 +21,10 @@ struct Secded16DecodeResult {
     bool uncorrectable;
 };
 
-uint16_t ComputeCrc16Ccitt(const uint8_t* data, size_t length);
+uint16_t ComputeCrc16(const uint8_t* data, size_t length);
 uint32_t ComputeCrc32(const uint8_t* data, size_t length);
 
+// The goal with the SECDED encoding should be to make the "typical" path (no errors) as fast as possible.
 uint16_t Secded16Encode11(uint16_t raw11);
 Secded16DecodeResult Secded16Decode11(uint16_t encoded16);
 

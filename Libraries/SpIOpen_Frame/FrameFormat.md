@@ -8,7 +8,7 @@ The Data Format of a SpIOpen Frame:
     * Useful for finding the beginning of a new frame in a large buffer or in a PIO state machine
 * [2 Bytes] Format Header : Contains info on the rest of the header format, and everything needed to calculate the frame length
     * Most significant byte first
-    * SECDED(16,11) : 11 bits of data hamming-encoded to 16 bits on-the-wire such that 1 error can be corrected and two can be detected
+    * SECDED(16,11) : 11 bits of data hamming-encoded to 16 bits on-the-wire such that 1 error can be corrected and two can be detected. Data occupies lowest 11 bits, hamming pairty is in bits 12-15, and overall parity in bit 16.
     * [Bits 0-3] : CAN Data Length Code ("DLC") - Along with other flags, indicated the payload length
     * [Bit 4] : Identifier Extension ("IDE") flag - TRUE indicates that the 29-bit CID (4 Bytes) is used instead of the default 11-bit CID (2 Bytes)
     * [Bit 5] : Flexible Data-Rate Format ("FDF") flag - TRUE indicates that CAN-FD features are available (BRS, ESI, Extended DLC)

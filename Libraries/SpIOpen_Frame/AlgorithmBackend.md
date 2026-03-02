@@ -30,7 +30,7 @@ To use a hardware-accelerated or other custom implementation:
 
 1. **Implement the same API** in a new `.cpp` file. You must define these symbols in namespace `spiopen::algorithms`:
 
-   - `uint16_t ComputeCrc16Ccitt(const uint8_t* data, size_t length);`
+   - `uint16_t ComputeCrc16C(const uint8_t* data, size_t length);`
    - `uint32_t ComputeCrc32(const uint8_t* data, size_t length);`
    - `uint16_t Secded16Encode11(uint16_t raw11);`
    - `Secded16DecodeResult Secded16Decode11(uint16_t encoded16);`
