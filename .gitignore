@@ -39,3 +39,7 @@
 
 # debug information files
 *.dwo
+/Libraries/SpIOpen_Frame/build
+Libraries/SpIOpen_Frame/.config
+Libraries/SpIOpen_Frame/include/generated/autoconf.h
+/Libraries/SpIOpen_Frame/build-tests

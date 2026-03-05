@@ -1,0 +1,12 @@
+[submodule "modules/rtos-abstraction-layer"]
+	path = modules/rtos-abstraction-layer
+	url = https://github.com/NXP/rtos-abstraction-layer.git
+[submodule "modules/embeded-template-library"]
+	path = modules/embeded-template-library
+	url = https://github.com/ETLCPP/etl.git
+[submodule "modules/FreeRTOS"]
+	path = modules/FreeRTOS
+	url = https://github.com/FreeRTOS/FreeRTOS.git
+[submodule "modules/FreeRTOS-POSIX"]
+	path = modules/FreeRTOS-POSIX
+	url = https://github.com/FreeRTOS/Lab-Project-FreeRTOS-POSIX.git
