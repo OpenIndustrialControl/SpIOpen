@@ -1,6 +1,6 @@
 menu SpIOpen Protocol Features
 
-config SPIOPEN_CONFIGURABLE_FRAME_POOL
+config SPIOPEN_ROUTER_FRAME_POOL_SIZE_CONFIGURABLE
     bool "Support configurable (non-static) spiopen frame pool"
     default n
     help

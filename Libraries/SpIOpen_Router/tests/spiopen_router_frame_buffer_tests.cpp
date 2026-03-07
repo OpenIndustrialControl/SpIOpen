@@ -6,16 +6,17 @@
 #include <cstring>
 
 #include "spiopen_frame.h"
-#include "spiopen_frame_buffer.h"
 #include "spiopen_frame_format.h"
 #include "spiopen_frame_reader.h"
 #include "spiopen_frame_writer.h"
+#include "spiopen_router_frame_buffer.h"
 
 using namespace spiopen;
+using namespace spiopen::router;
 using namespace spiopen::format;
 using namespace spiopen::frame_reader::impl;
 
-TEST(SpIOpen_FrameBuffer, ConstructorAndFields) {
+TEST(SpIOpen_Router_FrameBuffer, ConstructorAndFields) {
     etl::span<uint8_t> empty_span;
     FrameBuffer empty_buffer = FrameBuffer(empty_span);
     EXPECT_EQ(empty_buffer.GetBuffer().data(), nullptr) << "Buffer data";
@@ -28,7 +29,7 @@ TEST(SpIOpen_FrameBuffer, ConstructorAndFields) {
     EXPECT_EQ(test_buffer.GetBuffer().size(), 8U) << "Buffer length";
 }
 
-TEST(SpIOpen_FrameBuffer, WriteInternalBuffer) {
+TEST(SpIOpen_Router_FrameBuffer, WriteInternalBuffer) {
     // --- Success: minimal CC frame with 2-byte payload, buffer large enough ---
     {
         constexpr size_t kBufferSize = 64;
@@ -92,7 +93,7 @@ TEST(SpIOpen_FrameBuffer, WriteInternalBuffer) {
     }
 }
 
-TEST(SpIOpen_FrameBuffer, ReadInternalBuffer) {
+TEST(SpIOpen_Router_FrameBuffer, ReadInternalBuffer) {
     // --- Success: buffer contains valid CC frame; read and check frame fields and payload ---
     {
         constexpr size_t kBufferSize = 64;
@@ -179,7 +180,7 @@ TEST(SpIOpen_FrameBuffer, ReadInternalBuffer) {
     }
 }
 
-TEST(SpIOpen_FrameBuffer, LoadAndReadInternalBuffer) {
+TEST(SpIOpen_Router_FrameBuffer, LoadAndReadInternalBuffer) {
     // --- Success: input stream with valid frame, bit_slip_count 0 ---
     {
         constexpr size_t kInputSize = 64;
