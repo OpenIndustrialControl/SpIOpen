@@ -20,7 +20,7 @@ namespace spiopen {
  */
 class FrameBuffer {
    public:
-    FrameBuffer(etl::vector<uint8_t> &buffer) : buffer_(buffer), frame_() {}
+    FrameBuffer(etl::span<uint8_t> buffer) : buffer_(buffer), frame_() {}
     ~FrameBuffer() = default;
 
     // Functions that synchronize the internal frame object with the internal buffer
@@ -91,11 +91,12 @@ class FrameBuffer {
 
     // Getters for the internal fields
     Frame &GetFrame() { return frame_; }
-    etl::vector<uint8_t> &GetBuffer() { return buffer_; }
+    etl::span<uint8_t> GetBuffer() { return buffer_; }
+    void SetBuffer(etl::span<uint8_t> buffer) { buffer_ = buffer; }
 
    private:
     Frame frame_;
-    etl::vector<uint8_t> buffer_;
+    etl::span<uint8_t> buffer_;
 };
 
 }  // namespace spiopen

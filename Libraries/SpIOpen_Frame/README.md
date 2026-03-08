@@ -20,6 +20,7 @@ The format of the SpIOpen frame is defined in [FrameFormat.md](FrameFormat.md).
 - spiopen_frame_parser.h : Contains the `spiopen::frame_parser` namespace which has helper functions used to parse byte streams (`stl::byte_stream_reader`) into a structured Frame object.
 - spiopen_frame_writer.h : Contains the `spiopen::frame_writer` namespace which has helper functions used to write structured Frame objects into a byte stream (`stl::byte_stream_writer`).
 - spiopen_frame_algorithms.h : Contains the `spiopen::algorithms` abstraction layer for common algorithms (hamming, CRC) and a default software implementation. See [AlgorithmBackend.md](AlgorithmBackend.md) for more info.
+- spiopen_frame_buffer.h contains the `spiopen::FrameBuffer` class which represents a combination of a `Frame` object and a non-owned memory buffer location (`etl::span<uint8_t>`) with helper functions for synchronizing the two of them.
 
 ## Configuration
 

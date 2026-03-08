@@ -4,7 +4,7 @@ This class is responsible for initializing and managing all of the FrameBuffer o
 
 ## Overview
 
-The Frame Pool keeps an internal queue of available FrameBuffer objects, one for each supported CAN Frame size (CC, FD, XL).
+The Frame Pool keeps many internal pools of available FrameBuffer objects, one for each supported CAN Frame size (CC, FD, XL).
 Frame Publishers request a FrameBuffer object from the pool (and must handle the case where none are available!).
 Frame Publishers may hand the frame off to another process (like the router) for further processing, but eventually the owner of the FrameBuffer will call a release function on the Frame Pool to signal that it can be returned to the pool of available FrameBuffers.
 
