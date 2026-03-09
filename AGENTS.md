@@ -4,5 +4,5 @@ This is a series of libraries used to enable communication between embeded devic
 
 ## Components
 - The core library focused on the communication format is located in Libraries/SpIOpen_Frame
-- The core library focused on the routing of frames between threads and ports in a device is located in Libraries\SpIOpen_Router
+- The core library focused on the routing of frames between threads and ports in a device (broker: publishers and subscribers) is located in Libraries\SpIOpen_Broker
 - The core library at the heart of every device (master or slave) implementing the protocol is located at Libraries\SpIOpen_Node

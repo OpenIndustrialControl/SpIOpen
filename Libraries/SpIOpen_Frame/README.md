@@ -36,25 +36,25 @@ If hardware acceleration is available for algorithms like CRC16 and CRC32, ports
 
 ## Usage
 
-This library is generally meant to be used by the SpIOpen_Router library, where Frames or `FrameBuffer`s are shuffled around between producers and consumers. Depending on if the calling code is a producer or consumer, or working on a port or as an app, the usage might be different.
+This library is generally meant to be used by the SpIOpen_Broker library, where Frames or `FrameBuffer`s are shuffled around between publishers and subscribers. Depending on whether the calling code is a publisher or subscriber, or working on a port or as an app, the usage might be different.
 
-Reading from the wire, no matter the source or method, should *always* result in a synchronization from the internal buffer to the internal `Frame` object. This allows all consumers to assume that the structured data in the `Frame` object is the source of truth, and all data manipulation will happen at the structured data object level. The internal buffer should not be accessed until it is time to write the data back to the wire, at which point the `Frame` object must be synchronized back to the internal buffer.
+Reading from the wire, no matter the source or method, should *always* result in a synchronization from the internal buffer to the internal `Frame` object. This allows all subscribers to assume that the structured data in the `Frame` object is the source of truth, and all data manipulation will happen at the structured data object level. The internal buffer should not be accessed until it is time to write the data back to the wire, at which point the `Frame` object must be synchronized back to the internal buffer.
 
-### Reading from the Wire (Producer)
+### Reading from the Wire (Publisher)
 
-`FrameBuffer` is constructed with a `span<uint8_t>` argument that represents its memory stream. This can be a pointer to a portion of a circular buffer that may change over the lifetime of the `FrameBuffer` object, or potentially a permanently assigned dedicated buffer linked to the `Frame` object (perhaps written via DMA?). The buffer is filled asynchronously, and when the writing process is complete it should call the `ReadInternalBuffer()` function to parse the byte stream into the contained `Frame` object, which represents the frame in a more structured way for future consumers.
+`FrameBuffer` is constructed with a `span<uint8_t>` argument that represents its memory stream. This can be a pointer to a portion of a circular buffer that may change over the lifetime of the `FrameBuffer` object, or potentially a permanently assigned dedicated buffer linked to the `Frame` object (perhaps written via DMA?). The buffer is filled asynchronously, and when the writing process is complete it should call the `ReadInternalBuffer()` function to parse the byte stream into the contained `Frame` object, which represents the frame in a more structured way for future subscribers.
 
 When using external memory to capture streamed data from an input port, there is a potential for bit-misalignment to occur (essentially a right-rotate over the infinite bitstream due to a missed bit). In that case, use the `LoadAndReadInternalBuffer()` function to simultaneously copy and bit-shift the external data into the `FrameBuffer`.
 
-### Writing to the Wire (Consumer)
+### Writing to the Wire (Subscriber)
 
-A `FrameBuffer` object is passed to a consumer that wants to write the byte stream to an output port. The consumer should call the `WriterInternalBuffer()` function before accessing the byte stream to ensure that the latest `Frame` object data has been represented in the buffer (this is necessary even for minor changes like decrementing the TTL because the CRC will be recalculated).
+A `FrameBuffer` object is passed to a subscriber that wants to write the byte stream to an output port. The subscriber should call the `WriterInternalBuffer()` function before accessing the byte stream to ensure that the latest `Frame` object data has been represented in the buffer (this is necessary even for minor changes like decrementing the TTL because the CRC will be recalculated).
 
-### Writing to the Object (Producer)
+### Writing to the Object (Publisher)
 
 When an application generates SpIOpen Frames (like a CANOpenNode instance) it can either write to the internal `Frame` object directly, or it can copy its own `Frame` object data into the `FrameBuffer` using the `LoadFrameAndWriteInternalBuffer()` function.
 
-### Reading from the Object (Consumer)
+### Reading from the Object (Subscriber)
 
-The consumer can assume that the internal `Frame` object is already loaded and accurate. It should access that data directly and ignore the internal buffer or other functions of the `FrameBuffer` object.
+The subscriber can assume that the internal `Frame` object is already loaded and accurate. It should access that data directly and ignore the internal buffer or other functions of the `FrameBuffer` object.
 
