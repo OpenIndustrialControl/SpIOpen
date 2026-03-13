@@ -9,6 +9,15 @@ SPDX-License-Identifier: Apache-2.0
 #include <cstdint>
 
 namespace spiopen::format {
+/**
+ * @brief CAN message/frame size classes used for payload/frame sizing decisions.
+ */
+enum class CanMessageType : uint8_t {
+    CanCc = 0, /**< CAN Classic */
+    CanFd = 1, /**< CAN FD */
+    CanXl = 2, /**< CAN XL */
+};
+
 /* Preamble Constants */
 static constexpr uint8_t PREAMBLE_BYTE = 0xAA;             // Value of each byte in the preamble
 static constexpr uint8_t PREAMBLE_BYTE_COMPLEMENT = 0x55;  // Value of the complement of the preamble byte
@@ -63,6 +72,12 @@ static constexpr size_t MAX_CAN_FD_FRAME_SIZE =
     (MAX_CAN_FD_HEADER_SIZE + MAX_FD_PAYLOAD_SIZE + LONG_CRC_SIZE + MAX_PADDING_SIZE);
 static constexpr size_t MAX_CAN_XL_FRAME_SIZE =
     (MAX_CAN_XL_HEADER_SIZE + MAX_XL_PAYLOAD_SIZE + LONG_CRC_SIZE + MAX_PADDING_SIZE);
+
+// Max payload/frame size lookup by CanMessageType (CanCc, CanFd, CanXl)
+static constexpr size_t MAX_CAN_MESSAGE_PAYLOAD_SIZE_BY_TYPE[] = {
+    MAX_CC_PAYLOAD_SIZE, MAX_FD_PAYLOAD_SIZE, MAX_XL_PAYLOAD_SIZE};
+static constexpr size_t MAX_CAN_MESSAGE_FRAME_SIZE_BY_TYPE[] = {
+    MAX_CAN_CC_FRAME_SIZE, MAX_CAN_FD_FRAME_SIZE, MAX_CAN_XL_FRAME_SIZE};
 
 // Convert a 4-bit DLC nibble to the payload length in bytes
 // Only valid for CAN-CC and CAN-FD frames

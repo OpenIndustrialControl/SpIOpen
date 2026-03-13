@@ -16,7 +16,8 @@ It is designed to run on a real-time system and uses CMSIS-RTOSv2 as the standar
 
 ## Contents
 
-- spiopen_broker_frame_pool.h contains the `spiopen::broker::FramePool` class which is responsible for managing the lifetime of byte array buffers within `FrameBuffer` objects for publishers and subscribers of SpIOpen frames. It also has the `spiopen::broker::FrameMessageAllocator` class which wraps the multiple frame pools behind one interface that allocates the right size FrameMessage based on the request of the publishing thread.
+- spiopen_broker_frame_pool.h contains the `spiopen::broker::FramePool` class which is responsible for managing the lifetime of byte array buffers within `FrameBuffer` objects for publishers and subscribers of SpIOpen frames.
+- spiopen_broker_frame_allocator.h contains the `spiopen::broker::FrameMessageAllocator` class which wraps multiple frame pools behind one interface that allocates the right size `FrameMessage` based on publisher requests.
 - spiopen_broker_frame_broker.h contains the `spiopen::broker::FrameBroker` class which is responsible for distributing frames from publishers to all subscribing subscribers, along with initializing the broker based on device configuration.
 - spiopen_broker_frame_message.h contains the `spiopen::broker::FrameMessage` class, along with the definitions of the Message Type as `spiopen::broker::MessageType` enum.
 - spiopen_broker_frame_publisher.h contains the `spiopen::broker::publisher` namespace and the `spiopen::broker::publisher::FramePublisherHandle_t` struct used by publishers for diagnostics and context when publishing.

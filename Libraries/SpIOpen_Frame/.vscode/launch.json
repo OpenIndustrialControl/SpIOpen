@@ -2,11 +2,11 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug SpIOpen Frame Tests",
+            "name": "Debug Tests",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/Libraries/SpIOpen_Frame/build-tests/tests/spiopen_frame_tests",
-            "cwd": "${workspaceFolder}/Libraries/SpIOpen_Frame/build-tests",
+            "program": "${workspaceFolder}/build-tests/tests/spiopen_frame_tests",
+            "cwd": "${workspaceFolder}/build-tests",
             "MIMode": "gdb",
             "setupCommands": [
                 {

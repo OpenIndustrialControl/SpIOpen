@@ -17,14 +17,9 @@
       "editor.formatOnSave": true,
       "clang-format.style": "file" 
     },
-        "postCreateCommand": [
-          "/bin/bash",
-          "-c",
-          "export LC_ALL=C.UTF-8 && export LANG=C.UTF-8",
-          "apt-get update && apt-get install -y gdb-multiarch"
-    ],
+    "postCreateCommand": "apt-get update && apt-get install -y gdb-multiarch",
     "remoteEnv": {
-    "FREERTOS_PATH": "${containerWorkspaceFolder}/modules/FreeRTOS", 
-    "FREERTOS_POSIX_PATH": "${containerWorkspaceFolder}/modules/FreeRTOS-POSIX"
+      "LC_ALL": "C.UTF-8",
+      "LANG": "C.UTF-8"
     }
   }

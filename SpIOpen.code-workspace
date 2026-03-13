@@ -1,0 +1,17 @@
+{
+    "folders": [
+        {
+            "path": ".",
+            "name": "SpIOpen"
+        },
+        {
+            "path": "Libraries/SpIOpen_Frame",
+            "name": "SpIOpen Frame"
+        },
+        {
+            "path": "Libraries/SpIOpen_Broker",
+            "name": "SpIOpen Broker"
+        }
+    ],
+    "settings": {}
+}

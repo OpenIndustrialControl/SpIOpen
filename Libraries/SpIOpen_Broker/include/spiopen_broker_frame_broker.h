@@ -61,7 +61,7 @@ static constexpr size_t FRAME_BROKER_MAX_SUBSCRIBERS = 8U;
  * on inbound messages and distributes them to subscriber mailboxes according to each
  * subscriber's message filter.
  */
-class FrameBroker : public ILifecycleComponent<FrameBrokerConfig, FrameBrokerError> {
+class FrameBroker : public ILifecycleComponent<FrameBrokerConfig, LifecycleError> {
    public:
     /**
      * @brief Constructs an unconfigured broker.
@@ -75,7 +75,7 @@ class FrameBroker : public ILifecycleComponent<FrameBrokerConfig, FrameBrokerErr
      * @param config Thread/mailbox configuration
      * @return Success when config is accepted; error on invalid args/state
      */
-    etl::expected<void, FrameBrokerError> Configure(const FrameBrokerConfig& config) override;
+    etl::expected<void, LifecycleError> Configure(const FrameBrokerConfig& config) override;
 
     /**
      * @brief Initializes broker inbox and thread resources.
@@ -84,31 +84,31 @@ class FrameBroker : public ILifecycleComponent<FrameBrokerConfig, FrameBrokerErr
      *
      * @return Success on initialization, error on invalid state/resource failure
      */
-    etl::expected<void, FrameBrokerError> Initialize() override;
+    etl::expected<void, LifecycleError> Initialize() override;
 
     /**
      * @brief Starts the broker routing thread.
      * @return Success on start, error on invalid state/resource failure
      */
-    etl::expected<void, FrameBrokerError> Start() override;
+    etl::expected<void, LifecycleError> Start() override;
 
     /**
      * @brief Stops broker routing thread.
      * @return Success on stop, error on invalid state/resource failure
      */
-    etl::expected<void, FrameBrokerError> Stop() override;
+    etl::expected<void, LifecycleError> Stop() override;
 
     /**
      * @brief Deinitializes broker resources and returns to Configured state.
      * @return Success on deinitialization; error on invalid state/resource failure
      */
-    etl::expected<void, FrameBrokerError> Deinitialize() override;
+    etl::expected<void, LifecycleError> Deinitialize() override;
 
     /**
-     * @brief Resets broker subscriptions and internal counters while inactive.
-     * @return Success on reset, error on invalid state
+     * @brief Clears broker configuration and transitions to Unconfigured.
+     * @return Success on reset; error on invalid lifecycle state
      */
-    etl::expected<void, FrameBrokerError> Reset();
+    etl::expected<void, LifecycleError> Reset() override;
 
     /**
      * @brief Registers a subscriber for broker fan-out.

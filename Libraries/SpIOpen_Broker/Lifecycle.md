@@ -55,7 +55,7 @@ The following functions are the common lifecycle API pattern for memory-backed b
 
 To enforce this pattern in code, memory-backed classes implement the templated lifecycle interface:
 
-- `ILifecycleComponent<ConfigT, ErrorT>` in `include/spiopen_broker_lifecycle.h`
+- `ILifecycleComponent<ConfigT, ErrorT>` in `include/spiopen_broker_lifecycle.h` with shared `LifecycleErrorType` primary codes and `LifecycleError` (leaf alias) for lifecycle methods
 
 `FramePool`, `FrameMailbox`, and `FrameBroker` each implement this interface using their own config and error types.
 

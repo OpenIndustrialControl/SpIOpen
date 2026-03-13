@@ -6,9 +6,13 @@ SPDX-License-Identifier: Apache-2.0
 */
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
+#include <utility>
 
 #include "etl/expected.h"
+#include "etl/optional.h"
+#include "etl/tuple.h"
 
 namespace spiopen::broker {
 
@@ -28,25 +32,100 @@ enum class LifecycleState : uint8_t {
     Active,           /**< Active; normal operations allowed */
     Stopping,         /**< Deactivation in progress */
     Deinitializing,   /**< Resource teardown in progress */
+    Resetting,        /**< Reset to Configured state in progress */
     Mixed,            /**< (Allocator only) Underlying pools in non-uniform states */
-    Faulted,          /**< Fatal error state; no further operations allowed */
-    Recovering,       /**< Recovering from fault state */
+    // MAYBE ADD LATER:Faulted,          /**< Fatal error state; no further operations allowed */
+    // MAYBE ADD LATER:Recovering,       /**< Recovering from fault state */
 };
 
 /**
- * @brief Pure-virtual interface for broker components following the common lifecycle.
+ * @brief Generic primary error codes for lifecycle transition interface methods.
+ */
+enum class LifecycleErrorType : uint8_t {
+    InvalidArgument = 1,    /**< Invalid argument passed to lifecycle transition */
+    InvalidConfiguration,   /**< Configuration is invalid and must be rejected*/
+    InvalidState,           /**< Lifecycle transition called in invalid current state */
+    AggregateError,         /**< Error originated from one or more child lifecycle components */
+    PartialStateTransition, /**< Group transition partially progressed; retry is supported */
+    NotConfigured,          /**< Operation requires prior successful Configure() */
+    NotInitialized,         /**< Operation requires prior successful Initialize() */
+    NotActive,              /**< Operation requires prior successful Start() */
+    ResourceFailure,        /**< Underlying RTOS/memory resource operation failed */
+    NotAllowedInIsr,        /**< Operation is not allowed from ISR context */
+};
+
+/**
+ * @brief Aggregate lifecycle error that can optionally embed child error details.
  *
- * Enforces the common lifecycle transition API while allowing each class to
- * define its own config and error enums.
+ * @tparam ChildErrorTs Child error types of nested lifecycle components.
+ * For leaf components, this pack is empty and only the primary error code is used.
+ */
+template <typename... ChildErrorTs>
+struct AggregateLifecycleError {
+    LifecycleErrorType error = LifecycleErrorType::InvalidState; /**< Primary lifecycle error code */
+    etl::optional<etl::tuple<etl::optional<ChildErrorTs>...>>
+        child_errors; /**< Optional per-child error details (position maps to child order) */
+
+    static AggregateLifecycleError FromChildErrors(const etl::tuple<etl::optional<ChildErrorTs>...>& child_errors_in) {
+        AggregateLifecycleError out;
+        out.error = LifecycleErrorType::AggregateError;
+        out.child_errors = child_errors_in;
+        return out;
+    }
+
+    static bool HasAnyChildErrors(const etl::tuple<etl::optional<ChildErrorTs>...>& child_errors_in) {
+        return HasAnyChildErrorsImpl(child_errors_in, std::index_sequence_for<ChildErrorTs...>{});
+    }
+
+    static etl::optional<AggregateLifecycleError> TryFromChildErrors(
+        const etl::tuple<etl::optional<ChildErrorTs>...>& child_errors_in) {
+        if (!HasAnyChildErrors(child_errors_in)) {
+            return etl::nullopt;
+        }
+        return FromChildErrors(child_errors_in);
+    }
+
+   private:
+    template <size_t... Indexes>
+    static bool HasAnyChildErrorsImpl(const etl::tuple<etl::optional<ChildErrorTs>...>& child_errors_in,
+                                      std::index_sequence<Indexes...>) {
+        return (... || etl::get<Indexes>(child_errors_in).has_value());
+    }
+};
+
+/**
+ * @brief Leaf specialization with compact storage and implicit enum conversion.
+ */
+template <>
+struct AggregateLifecycleError<> {
+    LifecycleErrorType error = LifecycleErrorType::InvalidState; /**< Primary lifecycle error code */
+
+    constexpr AggregateLifecycleError() = default;
+    constexpr AggregateLifecycleError(LifecycleErrorType error_in) : error(error_in) {}
+
+    static constexpr AggregateLifecycleError<> FromType(LifecycleErrorType error_in) {
+        return AggregateLifecycleError<>(error_in);
+    }
+};
+
+/**
+ * @brief Leaf lifecycle error alias (no child error details).
+ */
+using LifecycleError = AggregateLifecycleError<>;
+
+/**
+ * @brief Pure-virtual interface for broker components following the common lifecycle contract.
+ *
+ * Enforces the common lifecycle transition API with shared lifecycle errors.
  *
  * @tparam ConfigT Class-specific configuration structure
- * @tparam ErrorT Class-specific error enum
+ * @tparam TError Class-specific error type (leaf or aggregate lifecycle error)
  */
-template <typename ConfigT, typename ErrorT>
+template <typename ConfigT, typename TError>
 class ILifecycleComponent {
    public:
     using ConfigType = ConfigT;
-    using ErrorType = ErrorT;
+    using ErrorType = TError;
 
     virtual ~ILifecycleComponent() = default;
 
@@ -55,37 +134,219 @@ class ILifecycleComponent {
      * @param config Class-specific runtime configuration
      * @return Success when configuration is accepted
      */
-    virtual etl::expected<void, ErrorT> Configure(const ConfigT& config) = 0;
+    virtual etl::expected<void, TError> Configure(const ConfigT& config) = 0;
 
     /**
      * @brief Initializes resources and transitions to Inactive on success.
      * @return Success on initialization
      */
-    virtual etl::expected<void, ErrorT> Initialize() = 0;
+    virtual etl::expected<void, TError> Initialize() = 0;
 
     /**
      * @brief Starts runtime behavior and transitions to Active on success.
      * @return Success on start
      */
-    virtual etl::expected<void, ErrorT> Start() = 0;
+    virtual etl::expected<void, TError> Start() = 0;
 
     /**
      * @brief Stops runtime behavior and transitions to Inactive on success.
      * @return Success on stop
      */
-    virtual etl::expected<void, ErrorT> Stop() = 0;
+    virtual etl::expected<void, TError> Stop() = 0;
 
     /**
      * @brief Deinitializes resources and transitions to Configured on success.
      * @return Success on deinitialization
      */
-    virtual etl::expected<void, ErrorT> Deinitialize() = 0;
+    virtual etl::expected<void, TError> Deinitialize() = 0;
+
+    /**
+     * @brief Clears the configuration of the component and transitions to Unconfigured on success.
+     After being called, any memory allocated to the component in a previous Configure() call may be freed.
+     * @return Success on reset
+     */
+    virtual etl::expected<void, TError> Reset() = 0;
 
     /**
      * @brief Returns the current shared lifecycle state.
      * @return Current lifecycle state
      */
     virtual LifecycleState GetState() const = 0;
+};
+
+/**
+ * @brief Interface helper for lifecycle components composed from child lifecycle components.
+ *
+ * This interface derives aggregate ConfigType and ErrorType from child component types.
+ * ConfigType is an etl::tuple of each child's ConfigType, and ErrorType is an
+ * AggregateLifecycleError of each child's ErrorType.
+ *
+ * @tparam ChildComponentsT Child lifecycle component types
+ */
+template <typename... ChildComponentsT>
+class IAggregateLifecycleComponent
+    : public ILifecycleComponent<etl::tuple<typename ChildComponentsT::ConfigType...>,
+                                 AggregateLifecycleError<typename ChildComponentsT::ErrorType...>> {
+   public:
+    using ConfigType = etl::tuple<typename ChildComponentsT::ConfigType...>;
+    using ErrorType = AggregateLifecycleError<typename ChildComponentsT::ErrorType...>;
+    using BaseType = ILifecycleComponent<ConfigType, ErrorType>;
+    using ChildComponentsTuple = etl::tuple<ChildComponentsT&...>;
+    using ChildErrorDetailTuple = etl::tuple<etl::optional<typename ChildComponentsT::ErrorType>...>;
+
+    etl::expected<void, ErrorType> Configure(const ConfigType& config) override {
+        auto normalized_config = ValidateAndNormalizeConfiguration(config);
+        if (!normalized_config) {
+            return etl::unexpected(normalized_config.error());
+        }
+        return ConfigureChildren(*normalized_config);
+    }
+
+    etl::expected<void, ErrorType> Initialize() override { return InitializeChildren(); }
+
+    etl::expected<void, ErrorType> Start() override { return StartChildren(); }
+
+    etl::expected<void, ErrorType> Stop() override { return StopChildren(); }
+
+    etl::expected<void, ErrorType> Deinitialize() override { return DeinitializeChildren(); }
+
+    etl::expected<void, ErrorType> Reset() override { return ResetChildren(); }
+
+    ~IAggregateLifecycleComponent() override = default;
+
+   protected:
+    explicit IAggregateLifecycleComponent(ChildComponentsT&... child_components) : child_components_(child_components...) {}
+
+    /**
+     * @brief Optional pre-configure hook for aggregate components.
+     *
+     * Default behavior is pass-through (no normalization). Derived classes can override
+     * to validate and normalize aggregate configuration before child Configure() fanout.
+     *
+     * @param config Proposed aggregate configuration
+     * @return Normalized config on success, or high-level/aggregate configuration error
+     */
+    virtual etl::expected<ConfigType, ErrorType> ValidateAndNormalizeConfiguration(const ConfigType& config) {
+        return config;
+    }
+
+    etl::expected<void, ErrorType> ConfigureChildren(const ConfigType& config) {
+        return ConfigureChildrenImpl(config, std::index_sequence_for<ChildComponentsT...>{});
+    }
+
+    etl::expected<void, ErrorType> InitializeChildren() { return InitializeChildrenImpl(std::index_sequence_for<ChildComponentsT...>{}); }
+
+    etl::expected<void, ErrorType> StartChildren() { return StartChildrenImpl(std::index_sequence_for<ChildComponentsT...>{}); }
+
+    etl::expected<void, ErrorType> StopChildren() { return StopChildrenImpl(std::index_sequence_for<ChildComponentsT...>{}); }
+
+    etl::expected<void, ErrorType> DeinitializeChildren() {
+        return DeinitializeChildrenImpl(std::index_sequence_for<ChildComponentsT...>{});
+    }
+
+    etl::expected<void, ErrorType> ResetChildren() { return ResetChildrenImpl(std::index_sequence_for<ChildComponentsT...>{}); }
+
+    ChildComponentsTuple& GetChildComponents() { return child_components_; }
+    const ChildComponentsTuple& GetChildComponents() const { return child_components_; }
+
+   private:
+    template <size_t... Indexes>
+    etl::expected<void, ErrorType> ConfigureChildrenImpl(const ConfigType& config, std::index_sequence<Indexes...>) {
+        ChildErrorDetailTuple child_errors{};
+        (..., [&]() {
+            auto ret = etl::get<Indexes>(child_components_).Configure(etl::get<Indexes>(config));
+            if (!ret) {
+                etl::get<Indexes>(child_errors) = ret.error();
+            }
+        }());
+        auto aggregate_error = ErrorType::TryFromChildErrors(child_errors);
+        if (aggregate_error.has_value()) {
+            return etl::unexpected(*aggregate_error);
+        }
+        return {};
+    }
+
+    template <size_t... Indexes>
+    etl::expected<void, ErrorType> InitializeChildrenImpl(std::index_sequence<Indexes...>) {
+        ChildErrorDetailTuple child_errors{};
+        (..., [&]() {
+            auto ret = etl::get<Indexes>(child_components_).Initialize();
+            if (!ret) {
+                etl::get<Indexes>(child_errors) = ret.error();
+            }
+        }());
+        auto aggregate_error = ErrorType::TryFromChildErrors(child_errors);
+        if (aggregate_error.has_value()) {
+            return etl::unexpected(*aggregate_error);
+        }
+        return {};
+    }
+
+    template <size_t... Indexes>
+    etl::expected<void, ErrorType> StartChildrenImpl(std::index_sequence<Indexes...>) {
+        ChildErrorDetailTuple child_errors{};
+        (..., [&]() {
+            auto ret = etl::get<Indexes>(child_components_).Start();
+            if (!ret) {
+                etl::get<Indexes>(child_errors) = ret.error();
+            }
+        }());
+        auto aggregate_error = ErrorType::TryFromChildErrors(child_errors);
+        if (aggregate_error.has_value()) {
+            return etl::unexpected(*aggregate_error);
+        }
+        return {};
+    }
+
+    template <size_t... Indexes>
+    etl::expected<void, ErrorType> StopChildrenImpl(std::index_sequence<Indexes...>) {
+        ChildErrorDetailTuple child_errors{};
+        (..., [&]() {
+            auto ret = etl::get<Indexes>(child_components_).Stop();
+            if (!ret) {
+                etl::get<Indexes>(child_errors) = ret.error();
+            }
+        }());
+        auto aggregate_error = ErrorType::TryFromChildErrors(child_errors);
+        if (aggregate_error.has_value()) {
+            return etl::unexpected(*aggregate_error);
+        }
+        return {};
+    }
+
+    template <size_t... Indexes>
+    etl::expected<void, ErrorType> DeinitializeChildrenImpl(std::index_sequence<Indexes...>) {
+        ChildErrorDetailTuple child_errors{};
+        (..., [&]() {
+            auto ret = etl::get<Indexes>(child_components_).Deinitialize();
+            if (!ret) {
+                etl::get<Indexes>(child_errors) = ret.error();
+            }
+        }());
+        auto aggregate_error = ErrorType::TryFromChildErrors(child_errors);
+        if (aggregate_error.has_value()) {
+            return etl::unexpected(*aggregate_error);
+        }
+        return {};
+    }
+
+    template <size_t... Indexes>
+    etl::expected<void, ErrorType> ResetChildrenImpl(std::index_sequence<Indexes...>) {
+        ChildErrorDetailTuple child_errors{};
+        (..., [&]() {
+            auto ret = etl::get<Indexes>(child_components_).Reset();
+            if (!ret) {
+                etl::get<Indexes>(child_errors) = ret.error();
+            }
+        }());
+        auto aggregate_error = ErrorType::TryFromChildErrors(child_errors);
+        if (aggregate_error.has_value()) {
+            return etl::unexpected(*aggregate_error);
+        }
+        return {};
+    }
+
+    ChildComponentsTuple child_components_;
 };
 
 }  // namespace spiopen::broker

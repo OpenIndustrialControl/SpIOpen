@@ -35,18 +35,87 @@ enum class FramePoolError : uint8_t {
     NotActive,            /**< Operation requires active pool state */
 };
 
+#ifdef CONFIG_SPIOPEN_BROKER_FRAME_POOL_SIZE_CONFIGURABLE
+static constexpr bool BROKER_FRAME_POOL_SIZE_CONFIGURABLE = true;
+#else
+static constexpr bool BROKER_FRAME_POOL_SIZE_CONFIGURABLE = false;
+#endif
+
+#ifdef CONFIG_SPIOPEN_FRAME_CAN_FD_ENABLE
+static constexpr bool BROKER_CAN_FD_ENABLED = true;
+#else
+static constexpr bool BROKER_CAN_FD_ENABLED = false;
+#endif
+
+#ifdef CONFIG_SPIOPEN_FRAME_CAN_XL_ENABLE
+static constexpr bool BROKER_CAN_XL_ENABLED = true;
+#else
+static constexpr bool BROKER_CAN_XL_ENABLED = false;
+#endif
+
+#ifdef CONFIG_SPIOPEN_BROKER_FRAME_POOL_MAX_CC_FRAMES
+static constexpr size_t BROKER_FRAME_POOL_MAX_CC_FRAMES = CONFIG_SPIOPEN_BROKER_FRAME_POOL_MAX_CC_FRAMES;
+#else
+static constexpr size_t BROKER_FRAME_POOL_MAX_CC_FRAMES = 32U;
+#endif
+
+#ifdef CONFIG_SPIOPEN_BROKER_FRAME_POOL_MAX_FD_FRAMES
+static constexpr size_t BROKER_FRAME_POOL_MAX_FD_FRAMES = CONFIG_SPIOPEN_BROKER_FRAME_POOL_MAX_FD_FRAMES;
+#else
+static constexpr size_t BROKER_FRAME_POOL_MAX_FD_FRAMES = 32U;
+#endif
+
+#ifdef CONFIG_SPIOPEN_BROKER_FRAME_POOL_MAX_XL_FRAMES
+static constexpr size_t BROKER_FRAME_POOL_MAX_XL_FRAMES = CONFIG_SPIOPEN_BROKER_FRAME_POOL_MAX_XL_FRAMES;
+#else
+static constexpr size_t BROKER_FRAME_POOL_MAX_XL_FRAMES = 32U;
+#endif
+
+static constexpr size_t BROKER_FRAME_POOL_MAX_FRAMES_BY_CAN_MESSAGE_TYPE[] = {
+    BROKER_FRAME_POOL_MAX_CC_FRAMES, BROKER_FRAME_POOL_MAX_FD_FRAMES, BROKER_FRAME_POOL_MAX_XL_FRAMES};
+
 /**
  * @brief Runtime configuration for one FramePool instance.
  *
  * The pool maintains an internal queue of available messages. pool_storage is the
  * optional backing memory for that queue (and any pool-internal layout): if non-empty,
  * the implementation uses it; if empty, the pool allocates backing memory internally.
+
+ If SPIOPEN_BROKER_FRAME_POOL_SIZE_CONFIGURABLE is false, then the pool_storage must not be null. However, if it is
+ true, then the pool_storage may nor may not be null.
  */
 struct FramePoolConfig {
-    size_t message_count;            /**< Number of FrameMessage objects in this pool */
+    size_t message_count;            /**< Number of FrameMessage objects in this pool. Zero is valid. */
     size_t frame_buffer_size;        /**< Byte size of each message's internal frame buffer */
     etl::span<uint8_t> pool_storage; /**< Optional backing memory for the pool; empty = allocate internally */
+    const char* name = nullptr;      /**< Optional RTOS queue name used for diagnostics/debug visibility */
 };
+
+/**
+ * @brief Gets required backing memory bytes for one FramePool instance.
+ *
+ * This is the one public sizing helper intended for both compile-time and runtime
+ * buffer planning/validation.
+ *
+ * Internal layout follows:
+ * 1) queue pointer storage
+ * 2) FrameMessage object storage (aligned to alignof(FrameMessage))
+ * 3) frame buffer storage sized by can_message_type max frame size
+ *
+ * @param message_count Number of messages in the pool
+ * @param can_message_type CAN message/frame class (CC/FD/XL)
+ * @return Total required bytes for pool backing storage
+ */
+static constexpr size_t BytesToAllocateForFramePool(size_t message_count, format::CanMessageType can_message_type) {
+    const size_t queue_storage_size = message_count * sizeof(FrameMessage*);
+    const size_t alignment = alignof(FrameMessage);
+    const size_t messages_offset =
+        (alignment == 0U) ? queue_storage_size : ((queue_storage_size + alignment - 1U) / alignment) * alignment;
+    const size_t messages_storage_size = message_count * sizeof(FrameMessage);
+    const size_t frame_buffers_storage_size =
+        message_count * format::MAX_CAN_MESSAGE_FRAME_SIZE_BY_TYPE[static_cast<size_t>(can_message_type)];
+    return messages_offset + messages_storage_size + frame_buffers_storage_size;
+}
 
 /**
  * @brief Memory pool of fixed-size FrameMessage objects for one frame length class.
@@ -63,54 +132,64 @@ struct FramePoolConfig {
  *
  * Under this invariant, requeue on final Release should never fail in normal operation.
  */
-class FramePool : public ILifecycleComponent<FramePoolConfig, FramePoolError> {
+class FramePool : public ILifecycleComponent<FramePoolConfig, LifecycleError> {
    public:
     /**
      * @brief Constructs an unconfigured frame pool.
      */
     FramePool();
 
-    ~FramePool() = default;
+    virtual ~FramePool() = default;
 
     /**
      * @brief Configures pool memory and count before initialization.
+     Performs checks for memory sizing consistancy when external memory is used.
      * @param config Pool configuration (dynamic or static/external memory mode)
      * @return Success on valid config; error on invalid args/state
      */
-    etl::expected<void, FramePoolError> Configure(const FramePoolConfig& config) override;
+    etl::expected<void, LifecycleError> Configure(const FramePoolConfig& config) override;
 
     /**
      * @brief Initializes RTOS resources and prepares all messages for allocation.
      *
-     * Initializes queue/resources and transitions to Inactive state. Allocation
-     * is not enabled until Start() transitions the pool to Active.
+     * Initializes queue/resources and transitions to Inactive state. Fills the pool queue with all avalable messages.
+     * Allocation is not enabled until Start() transitions the pool to Active.
      *
      * @return Success when pool is initialized; error on invalid state/resource failure
      */
-    etl::expected<void, FramePoolError> Initialize() override;
+    etl::expected<void, LifecycleError> Initialize() override;
 
     /**
      * @brief Activates pool for allocation operations.
      * @return Success on transition to Active; error on invalid state
      */
-    etl::expected<void, FramePoolError> Start() override;
+    etl::expected<void, LifecycleError> Start() override;
 
     /**
      * @brief Deactivates pool allocation while continuing to accept requeues.
      * @return Success on transition to Inactive; error on invalid state
      */
-    etl::expected<void, FramePoolError> Stop() override;
+    etl::expected<void, LifecycleError> Stop() override;
 
     /**
      * @brief Deinitializes RTOS resources and resets pool state to configured.
+     All messages must be returned to the pool before deinitialization so that their memory can be potentially freed.
      * @return Success when deinitialized; error on invalid state/resource failure
      */
-    etl::expected<void, FramePoolError> Deinitialize() override;
+    etl::expected<void, LifecycleError> Deinitialize() override;
+
+    /**
+     * @brief Clears pool configuration and transitions to Unconfigured.
+     * @return Success on reset; error on invalid lifecycle state
+     */
+    etl::expected<void, LifecycleError> Reset() override;
 
     /**
      * @brief Allocates an available FrameMessage from this pool.
      *
-     * Allocation is allowed only in Active state.
+     * Allocation is allowed only in Active state. Returns a FrameMessage in Allocated state with a single reference,
+     * owned by the caller of this function. O r PoolExhausted error is returned if no messages are available within the
+     * timeout. ISR-safe when timeout_ticks is 0.
      *
      * @param message_type Message type metadata to attach for publish
      * @param publisher_handle Optional non-owning pointer to publisher descriptor associated with this message
@@ -129,9 +208,11 @@ class FramePool : public ILifecycleComponent<FramePoolConfig, FramePoolError> {
      * under the queue sizing invariant. If requeue fails due to an impossible edge
      * case (e.g. invalid/uninitialized pool), implementation should hard-fault/abort.
      *
+     * Virtual to allow test doubles (e.g. FakeFramePool) to override and record calls.
+     *
      * #TODO: Add centralized fault logging hook before hard abort.
      */
-    void RequeueFrameMessage(FrameMessage* message);
+    virtual void RequeueFrameMessage(FrameMessage* message);
 
     /**
      * @brief Gets current lifecycle state.
@@ -152,161 +233,13 @@ class FramePool : public ILifecycleComponent<FramePoolConfig, FramePoolError> {
     size_t GetMessageCount() const;
 
    private:
-    std::atomic<LifecycleState> state_;
-    FramePoolConfig config_;
-    osMessageQueueId_t available_messages_queue_;
-};
-
-/**
- * @brief Multi-pool allocator that routes allocation requests to CC/FD/XL pools.
- *
- * This class provides a single allocation touch-point for publishers while preserving
- * size-specialized pools for deterministic memory use.
- */
-class FrameMessageAllocator {
-   public:
-    /**
-     * @brief Constructs allocator from externally owned frame pools.
-     * @param cc_pool CAN-CC frame pool reference
-     * @param fd_pool CAN-FD frame pool reference (only when CAN-FD is enabled)
-     * @param xl_pool CAN-XL frame pool reference (only when CAN-XL is enabled)
-     */
-    FrameMessageAllocator(FramePool& cc_pool
-#ifdef CONFIG_SPIOPEN_FRAME_CAN_FD_ENABLE
-                          ,
-                          FramePool& fd_pool
-#endif
-#ifdef CONFIG_SPIOPEN_FRAME_CAN_XL_ENABLE
-                          ,
-                          FramePool& xl_pool
-#endif
-    );
-
-    ~FrameMessageAllocator() = default;
-
-    /**
-     * @brief Configures all underlying pools.
-     * @param cc_config CAN-CC pool config
-     * @param fd_config CAN-FD pool config (only when CAN-FD is enabled)
-     * @param xl_config CAN-XL pool config (only when CAN-XL is enabled)
-     * @return Success when all configs are accepted; error if any pool rejects configuration
-     */
-    etl::expected<void, FramePoolError> Configure(const FramePoolConfig& cc_config
-#ifdef CONFIG_SPIOPEN_FRAME_CAN_FD_ENABLE
-                                                  ,
-                                                  const FramePoolConfig& fd_config
-#endif
-#ifdef CONFIG_SPIOPEN_FRAME_CAN_XL_ENABLE
-                                                  ,
-                                                  const FramePoolConfig& xl_config
-#endif
-    );
-
-    /**
-     * @brief Initializes all underlying pools.
-     * @return Success on full initialization; error if any pool fails
-     */
-    etl::expected<void, FramePoolError> Initialize();
-
-    /**
-     * @brief Activates all underlying pools for allocation.
-     * @return Success when all pools enter Active state; error if any pool fails
-     */
-    etl::expected<void, FramePoolError> Start();
-
-    /**
-     * @brief Deactivates allocation on all underlying pools while preserving requeue behavior.
-     * @return Success when all pools enter Inactive state; error if any pool fails
-     */
-    etl::expected<void, FramePoolError> Stop();
-
-    /**
-     * @brief Deinitializes all underlying pools.
-     * @return Success on full deinitialization; error if any pool fails
-     */
-    etl::expected<void, FramePoolError> Deinitialize();
-
-    /**
-     * @brief Gets combined lifecycle state across all enabled frame pools.
-     * @return Aggregated state (LifecycleState::Mixed when pools are inconsistent)
-     */
-    LifecycleState GetState() const;
-
-    /**
-     * @brief Allocates a frame message from the smallest suitable pool.
-     * @param required_payload_bytes Minimum payload bytes requested by publisher
-     * @param message_type Message type metadata to assign to allocated message
-     * @param publisher_handle Optional non-owning pointer to publisher descriptor associated with this message
-     * @param timeout_ticks RTOS ticks to wait for allocation (0 for non-blocking)
-     * @return FrameMessage pointer on success; error on unsupported size or pool failure
-     */
-    etl::expected<FrameMessage*, FramePoolError> AllocateFrameMessage(
-        size_t required_payload_bytes, message::MessageType message_type,
-        const publisher::FramePublisherHandle_t* publisher_handle = nullptr, uint32_t timeout_ticks = 0U);
-
-    /**
-     * @brief Allocates a CAN-CC message from the CC pool.
-     * @param message_type Message type metadata to assign to allocated message
-     * @param publisher_handle Optional non-owning pointer to publisher descriptor associated with this message
-     * @param timeout_ticks RTOS ticks to wait for allocation (0 for non-blocking)
-     * @return FrameMessage pointer on success; error on pool failure
-     */
-    etl::expected<FrameMessage*, FramePoolError> AllocateCanCcFrameMessage(
-        message::MessageType message_type, const publisher::FramePublisherHandle_t* publisher_handle = nullptr,
-        uint32_t timeout_ticks = 0U);
-
-#ifdef CONFIG_SPIOPEN_FRAME_CAN_FD_ENABLE
-    /**
-     * @brief Allocates a CAN-FD message from the FD pool.
-     * @param message_type Message type metadata to assign to allocated message
-     * @param publisher_handle Optional non-owning pointer to publisher descriptor associated with this message
-     * @param timeout_ticks RTOS ticks to wait for allocation (0 for non-blocking)
-     * @return FrameMessage pointer on success; error on pool failure
-     */
-    etl::expected<FrameMessage*, FramePoolError> AllocateCanFdFrameMessage(
-        message::MessageType message_type, const publisher::FramePublisherHandle_t* publisher_handle = nullptr,
-        uint32_t timeout_ticks = 0U);
-#endif
-
-#ifdef CONFIG_SPIOPEN_FRAME_CAN_XL_ENABLE
-    /**
-     * @brief Allocates a CAN-XL message from the XL pool.
-     * @param message_type Message type metadata to assign to allocated message
-     * @param publisher_handle Optional non-owning pointer to publisher descriptor associated with this message
-     * @param timeout_ticks RTOS ticks to wait for allocation (0 for non-blocking)
-     * @return FrameMessage pointer on success; error on pool failure
-     */
-    etl::expected<FrameMessage*, FramePoolError> AllocateCanXlFrameMessage(
-        message::MessageType message_type, const publisher::FramePublisherHandle_t* publisher_handle = nullptr,
-        uint32_t timeout_ticks = 0U);
-#endif
-
-   private:
-    LifecycleState CombinePoolStates(LifecycleState cc_state
-#ifdef CONFIG_SPIOPEN_FRAME_CAN_FD_ENABLE
-                                     ,
-                                     LifecycleState fd_state
-#endif
-#ifdef CONFIG_SPIOPEN_FRAME_CAN_XL_ENABLE
-                                     ,
-                                     LifecycleState xl_state
-#endif
-    ) const;
-
-    /**
-     * @brief Selects backing pool for requested payload length.
-     * @param required_payload_bytes Minimum payload bytes requested
-     * @return Pointer to selected FramePool, or nullptr if unsupported
-     */
-    FramePool* SelectPoolForPayloadSize(size_t required_payload_bytes);
-
-    FramePool& cc_pool_;
-#ifdef CONFIG_SPIOPEN_FRAME_CAN_FD_ENABLE
-    FramePool& fd_pool_;
-#endif
-#ifdef CONFIG_SPIOPEN_FRAME_CAN_XL_ENABLE
-    FramePool& xl_pool_;
-#endif
+    etl::span<uint8_t> active_storage_; /**< Active backing storage used by the current initialized pool layout */
+    std::atomic<LifecycleState> state_; /**< Primary lifecycle state for configure/init/start/stop/deinit/reset */
+    FramePoolConfig config_;            /**< Last accepted configuration for this pool instance */
+    osMessageQueueId_t
+        available_messages_queue_; /**< Queue of available FrameMessage* entries (nullptr when not initialized) */
+    uint8_t*
+        owned_storage_; /**< Heap allocation owned by the pool when internal storage mode is used; nullptr otherwise */
 };
 
 }  // namespace spiopen::broker

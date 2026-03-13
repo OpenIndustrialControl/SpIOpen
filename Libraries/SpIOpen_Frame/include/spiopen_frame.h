@@ -141,6 +141,24 @@ class Frame final {
     }
 
     /**
+     * @brief Determines CAN message type from frame format flags.
+     *
+     * Priority is XL first, then FD, then CC. This intentionally uses only
+     * the frame flags and does not infer type from payload length.
+     *
+     * @return CAN message type represented by the frame flags
+     */
+    inline format::CanMessageType GetCanMessageType() const {
+        if (can_flags.XLF) {
+            return format::CanMessageType::CanXl;
+        }
+        if (can_flags.FDF) {
+            return format::CanMessageType::CanFd;
+        }
+        return format::CanMessageType::CanCc;
+    }
+
+    /**
      * @brief Clears all frame fields to their default zero/empty state.
      */
     inline void Reset() {

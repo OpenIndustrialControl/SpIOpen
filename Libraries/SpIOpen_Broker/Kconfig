@@ -1,4 +1,4 @@
-menu SpIOpen Protocol Features
+menu "SpIOpen Broker Features"
 
 config SPIOPEN_BROKER_FRAME_POOL_SIZE_CONFIGURABLE
     bool "Support configurable (non-static) spiopen frame pools"
@@ -49,3 +49,5 @@ config SPIOPEN_BROKER_MAILBOX_MAX_DEPTH
     help
         The maximum (or fixed when non-configurable) queue depth for each broker
         mailbox. This setting applies to broker inbox and subscriber mailboxes.
+
+endmenu

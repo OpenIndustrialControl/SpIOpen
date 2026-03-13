@@ -29,3 +29,41 @@ Frame Allocator is a thin wrapper that combines all of the Frame Pools (one for 
 - Because FrameBuffers only have a non-owning pointer to their buffer memory (span) Frame Messages have an internal array that actually owns the memory within the Frame Buffer. This way, the FrameMessage itself has a data size that contains the control structure for the message as well as the Frame object and Buffer byte array.
 - The frame pool is just a state machine and a queue, so it does not need a thread to "run". The Frame Allocator also does not need a thread.
 - The frame allocator is responsible for aggregating not just the AllocateFrameMessage(length) call, but also aggregating the state transition calls (init, config, deinit) of each contained Frame Pool.
+
+## Backing Memory Layout
+
+For one `FramePool` instance, the backing memory is sliced into three contiguous regions in this order:
+
+1. Queue pointer storage (`FrameMessage*` slots)
+2. `FrameMessage` object array
+3. Frame buffer byte storage (raw bytes used by each message's internal `FrameBuffer`)
+
+To keep placement deterministic and simple, message objects and frame buffers are clumped into their own contiguous
+regions (not interleaved per-message).
+
+### Region sizing
+
+- `queue_storage_size = message_count * sizeof(FrameMessage*)`
+- `messages_storage_size = message_count * sizeof(FrameMessage)`
+- `frame_buffers_storage_size = message_count * MaxCanMessageFrameSize(can_message_type)`
+
+### Alignment
+
+- `messages_offset` is aligned upward from the end of the queue region using `alignof(FrameMessage)`.
+- Frame buffer region follows immediately after the message object region.
+
+### Mapping from message index to frame buffer
+
+For message index `i` in `[0, message_count)`:
+
+- `message_ptr = messages_base + i`
+- `frame_buffer_ptr = frame_buffers_base + (i * MaxCanMessageFrameSize(can_message_type))`
+
+Each message is constructed with its corresponding frame buffer slice.
+
+### Shared sizing helpers
+
+Sizing and layout math should be shared by both compile-time and runtime callers.
+Public sizing helpers are intentionally minimal:
+
+- In `spiopen_broker_frame_pool.h`: `BytesToAllocateForFramePool(message_count, can_message_type)`

@@ -157,3 +157,24 @@ TEST(SpIOpen_Frame, DecrementAndCheckIfTimeToLiveExpired) {
     EXPECT_FALSE(frame.DecrementAndCheckIfTimeToLiveExpired()) << "Frame without TTL flag and TTL=2";
     EXPECT_EQ(frame.time_to_live, 2U) << "Frame should not decrement if TTL flag is not set";
 }
+
+TEST(SpIOpen_Frame, GetCanMessageTypeFromFlags) {
+    Frame frame;
+
+    frame.Reset();
+    EXPECT_EQ(frame.GetCanMessageType(), format::CanMessageType::CanCc);
+
+    frame.Reset();
+    frame.can_flags.FDF = true;
+    EXPECT_EQ(frame.GetCanMessageType(), format::CanMessageType::CanFd);
+
+    frame.Reset();
+    frame.can_flags.XLF = true;
+    EXPECT_EQ(frame.GetCanMessageType(), format::CanMessageType::CanXl);
+
+    frame.Reset();
+    frame.can_flags.FDF = true;
+    frame.can_flags.XLF = true;
+    EXPECT_EQ(frame.GetCanMessageType(), format::CanMessageType::CanXl)
+        << "XLF should take priority over FDF when both are set";
+}
