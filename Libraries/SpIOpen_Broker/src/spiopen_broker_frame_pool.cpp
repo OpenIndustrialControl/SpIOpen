@@ -32,13 +32,26 @@ FramePool::FramePool()
 etl::expected<void, LifecycleError> FramePool::Configure(const FramePoolConfig& config) {
     const LifecycleState current_state = state_.load(std::memory_order_relaxed);
     if (current_state != LifecycleState::Unconfigured) {
-        return etl::unexpected(LifecycleErrorType::InvalidState);
+        return etl::unexpected(LifecycleError(LifecycleErrorType::InvalidState));
     }
     state_.store(LifecycleState::Configuring, std::memory_order_release);
 
-    if (config.frame_buffer_size == 0U) {
+    auto normalized_config_ret = ValidateAndNormalizeConfiguration(config);
+    if (!normalized_config_ret) {
         state_.store(LifecycleState::Unconfigured, std::memory_order_release);
-        return etl::unexpected(LifecycleErrorType::InvalidArgument);
+        return etl::unexpected(normalized_config_ret.error());
+    }
+
+    config_ = *normalized_config_ret;
+    active_storage_ = etl::span<uint8_t>();
+    state_.store(LifecycleState::Configured, std::memory_order_release);
+    return {};
+}
+
+etl::expected<FramePool::ConfigType, FramePool::ErrorType> FramePool::ValidateAndNormalizeConfiguration(
+    const ConfigType& config) {
+    if (config.frame_buffer_size == 0U) {
+        return etl::unexpected(LifecycleError(LifecycleErrorType::InvalidConfiguration));
     }
 
     const size_t required_bytes = config.message_count * config.frame_buffer_size;
@@ -48,8 +61,7 @@ etl::expected<void, LifecycleError> FramePool::Configure(const FramePoolConfig& 
 
     if (!config.pool_storage.empty()) {
         if (config.pool_storage.size() < required_full_layout) {
-            state_.store(LifecycleState::Unconfigured, std::memory_order_release);
-            return etl::unexpected(LifecycleErrorType::InvalidArgument);
+            return etl::unexpected(LifecycleError(LifecycleErrorType::InvalidConfiguration));
         }
     } else {
         if (required_full_layout == 0U) {
@@ -62,22 +74,18 @@ etl::expected<void, LifecycleError> FramePool::Configure(const FramePoolConfig& 
 #else
         else {
             // #NOTE: Kconfig docs describe static-only mode; requiring explicit external storage here.
-            state_.store(LifecycleState::Unconfigured, std::memory_order_release);
-            return etl::unexpected(LifecycleErrorType::InvalidState);
+            return etl::unexpected(LifecycleError(LifecycleErrorType::InvalidConfiguration));
         }
 #endif
     }
 
-    config_ = config;
-    active_storage_ = etl::span<uint8_t>();
-    state_.store(LifecycleState::Configured, std::memory_order_release);
-    return {};
+    return config;
 }
 
 etl::expected<void, LifecycleError> FramePool::Initialize() {
     const LifecycleState current_state = state_.load(std::memory_order_relaxed);
     if (current_state != LifecycleState::Configured) {
-        return etl::unexpected(LifecycleErrorType::NotConfigured);
+        return etl::unexpected(LifecycleError(LifecycleErrorType::NotConfigured));
     }
     state_.store(LifecycleState::Initializing, std::memory_order_release);
 
@@ -97,8 +105,8 @@ etl::expected<void, LifecycleError> FramePool::Initialize() {
 
     if (!config_.pool_storage.empty()) {
         if (config_.pool_storage.size() < total_required_size) {
-            state_.store(LifecycleState::Unconfigured, std::memory_order_release);
-            return etl::unexpected(LifecycleErrorType::InvalidConfiguration);
+            state_.store(LifecycleState::Configured, std::memory_order_release);
+            return etl::unexpected(LifecycleError(LifecycleErrorType::ResourceFailure));
         }
         active_storage_ = config_.pool_storage;
     } else {
@@ -106,12 +114,12 @@ etl::expected<void, LifecycleError> FramePool::Initialize() {
         owned_storage_ = new (std::nothrow) uint8_t[total_required_size];
         if (owned_storage_ == nullptr) {
             state_.store(LifecycleState::Configured, std::memory_order_release);
-            return etl::unexpected(LifecycleErrorType::ResourceFailure);
+            return etl::unexpected(LifecycleError(LifecycleErrorType::ResourceFailure));
         }
         active_storage_ = etl::span<uint8_t>(owned_storage_, total_required_size);
 #else
         state_.store(LifecycleState::Configured, std::memory_order_release);
-        return etl::unexpected(LifecycleErrorType::InvalidArgument);
+        return etl::unexpected(LifecycleError(LifecycleErrorType::InvalidArgument));
 #endif
     }
 
@@ -136,7 +144,7 @@ etl::expected<void, LifecycleError> FramePool::Initialize() {
         }
         active_storage_ = etl::span<uint8_t>();
         state_.store(LifecycleState::Unconfigured, std::memory_order_release);
-        return etl::unexpected(LifecycleErrorType::ResourceFailure);
+        return etl::unexpected(LifecycleError(LifecycleErrorType::ResourceFailure));
     }
 
     uint8_t* base = active_storage_.data();
@@ -157,7 +165,7 @@ etl::expected<void, LifecycleError> FramePool::Initialize() {
             }
             active_storage_ = etl::span<uint8_t>();
             state_.store(LifecycleState::Unconfigured, std::memory_order_release);
-            return etl::unexpected(LifecycleErrorType::ResourceFailure);
+            return etl::unexpected(LifecycleError(LifecycleErrorType::ResourceFailure));
         }
     }
 
@@ -168,7 +176,7 @@ etl::expected<void, LifecycleError> FramePool::Initialize() {
 etl::expected<void, LifecycleError> FramePool::Start() {
     const LifecycleState current_state = state_.load(std::memory_order_relaxed);
     if (current_state != LifecycleState::Inactive) {
-        return etl::unexpected(LifecycleErrorType::NotInitialized);
+        return etl::unexpected(LifecycleError(LifecycleErrorType::NotInitialized));
     }
     state_.store(LifecycleState::Starting, std::memory_order_release);
     state_.store(LifecycleState::Active, std::memory_order_release);
@@ -177,7 +185,7 @@ etl::expected<void, LifecycleError> FramePool::Start() {
 
 etl::expected<void, LifecycleError> FramePool::Stop() {
     if (state_.load(std::memory_order_relaxed) != LifecycleState::Active) {
-        return etl::unexpected(LifecycleErrorType::InvalidState);
+        return etl::unexpected(LifecycleError(LifecycleErrorType::InvalidState));
     }
     state_.store(LifecycleState::Inactive, std::memory_order_release);
     return {};
@@ -185,15 +193,15 @@ etl::expected<void, LifecycleError> FramePool::Stop() {
 
 etl::expected<void, LifecycleError> FramePool::Deinitialize() {
     if (state_.load(std::memory_order_relaxed) != LifecycleState::Inactive) {
-        return etl::unexpected(LifecycleErrorType::InvalidState);
+        return etl::unexpected(LifecycleError(LifecycleErrorType::InvalidState));
     }
 
     if (config_.message_count > 0U) {
         if (available_messages_queue_ == nullptr) {
-            return etl::unexpected(LifecycleErrorType::ResourceFailure);
+            return etl::unexpected(LifecycleError(LifecycleErrorType::ResourceFailure));
         }
         if (osMessageQueueGetCount(available_messages_queue_) != config_.message_count) {
-            return etl::unexpected(LifecycleErrorType::ResourceFailure);
+            return etl::unexpected(LifecycleError(LifecycleErrorType::ResourceFailure));
         }
     }
 
@@ -203,13 +211,13 @@ etl::expected<void, LifecycleError> FramePool::Deinitialize() {
         const osStatus_t delete_status = osMessageQueueDelete(available_messages_queue_);
         if (delete_status == osErrorResource) {
             state_.store(LifecycleState::Inactive, std::memory_order_release);
-            return etl::unexpected(LifecycleErrorType::ResourceFailure);
+            return etl::unexpected(LifecycleError(LifecycleErrorType::ResourceFailure));
         } else if (delete_status == osErrorParameter) {
             state_.store(LifecycleState::Inactive, std::memory_order_release);
-            return etl::unexpected(LifecycleErrorType::ResourceFailure);
+            return etl::unexpected(LifecycleError(LifecycleErrorType::ResourceFailure));
         } else if (delete_status == osErrorISR) {
             state_.store(LifecycleState::Inactive, std::memory_order_release);
-            return etl::unexpected(LifecycleErrorType::NotAllowedInIsr);
+            return etl::unexpected(LifecycleError(LifecycleErrorType::NotAllowedInIsr));
         } else if (delete_status != osOK) {
             // #TODO: Route impossible lifecycle faults through centralized fault logging hook.
             std::abort();
@@ -230,10 +238,10 @@ etl::expected<void, LifecycleError> FramePool::Deinitialize() {
 etl::expected<void, LifecycleError> FramePool::Reset() {
     const LifecycleState current_state = state_.load(std::memory_order_relaxed);
     if (current_state == LifecycleState::Unconfigured) {
-        return etl::unexpected(LifecycleErrorType::NotConfigured);
+        return etl::unexpected(LifecycleError(LifecycleErrorType::NotConfigured));
     }
     if (current_state != LifecycleState::Configured) {
-        return etl::unexpected(LifecycleErrorType::InvalidState);
+        return etl::unexpected(LifecycleError(LifecycleErrorType::InvalidState));
     }
     config_ = FramePoolConfig{0U, 0U, etl::span<uint8_t>(), nullptr};
     state_.store(LifecycleState::Unconfigured, std::memory_order_release);

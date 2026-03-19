@@ -54,7 +54,7 @@ TEST(SpIOpen_Broker_FrameMailbox, ConfigureRejectsInvalidArguments) {
     auto ret = mailbox.Configure(config);
     EXPECT_FALSE(ret) << "Configure should reject zero-depth mailbox configuration";
     if (!ret) {
-        EXPECT_EQ(ret.error().error, LifecycleErrorType::InvalidArgument);
+        EXPECT_EQ(ret.error().error, LifecycleErrorType::InvalidConfiguration);
     }
 }
 

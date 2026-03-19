@@ -150,6 +150,13 @@ class FramePool : public ILifecycleComponent<FramePoolConfig, LifecycleError> {
     etl::expected<void, LifecycleError> Configure(const FramePoolConfig& config) override;
 
     /**
+     * @brief Validates and normalizes frame pool configuration.
+     * @param config Proposed pool config
+     * @return Normalized config on success, InvalidConfiguration on validation failure
+     */
+    etl::expected<ConfigType, ErrorType> ValidateAndNormalizeConfiguration(const ConfigType& config) override;
+
+    /**
      * @brief Initializes RTOS resources and prepares all messages for allocation.
      *
      * Initializes queue/resources and transitions to Inactive state. Fills the pool queue with all avalable messages.

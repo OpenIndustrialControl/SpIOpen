@@ -50,4 +50,21 @@ config SPIOPEN_BROKER_MAILBOX_MAX_DEPTH
         The maximum (or fixed when non-configurable) queue depth for each broker
         mailbox. This setting applies to broker inbox and subscriber mailboxes.
 
+config SPIOPEN_BROKER_THREAD_STACK_MEMORY_CONFIGURABLE
+    bool "Support configurable (heap-backed) broker thread stack memory"
+    default n
+    help
+        If enabled, broker thread stack memory may be provided at runtime or
+        allocated during initialization when no external stack buffer is supplied.
+        If disabled, the broker requires an external stack buffer and enforces a
+        fixed stack size from SPIOPEN_BROKER_THREAD_MAX_STACK_SIZE.
+
+config SPIOPEN_BROKER_THREAD_MAX_STACK_SIZE
+    int "Maximum broker thread stack size in bytes"
+    range 128 65535
+    default 2048
+    help
+        The maximum (or fixed when non-configurable) stack size used by the
+        FrameBroker thread.
+
 endmenu

@@ -103,4 +103,34 @@ osStatus_t osMessageQueueDelete(osMessageQueueId_t mq_id) {
     return osOK;
 }
 
+// ---------------------------------------------------------------------------
+// Thread stubs (non-functional: records handle but does not spawn a thread)
+// ---------------------------------------------------------------------------
+
+struct TestThread {
+    osThreadFunc_t func;
+    void* argument;
+};
+
+osThreadId_t osThreadNew(osThreadFunc_t func, void* argument, const osThreadAttr_t* attr) {
+    if (func == nullptr) {
+        return nullptr;
+    }
+    if ((attr == nullptr) || (attr->stack_size == 0U) || (attr->stack_mem == nullptr) || (attr->cb_mem == nullptr) ||
+        (attr->cb_size == 0U)) {
+        return nullptr;
+    }
+    auto* thread = new TestThread{func, argument};
+    return static_cast<osThreadId_t>(thread);
+}
+
+osStatus_t osThreadTerminate(osThreadId_t thread_id) {
+    if (thread_id == nullptr) {
+        return osErrorParameter;
+    }
+    auto* thread = static_cast<TestThread*>(thread_id);
+    delete thread;
+    return osOK;
+}
+
 }  // extern "C"

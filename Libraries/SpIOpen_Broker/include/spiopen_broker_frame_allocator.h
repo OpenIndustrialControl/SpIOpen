@@ -15,9 +15,15 @@ namespace spiopen::broker {
  *
  * This class provides a single allocation touch-point for publishers while preserving
  * size-specialized pools for deterministic memory use.
+ *
+ * Derives from IAggregateLifecycleComponent to delegate lifecycle transitions
+ * (Configure, Initialize, Start, Stop, Deinitialize, Reset) to the three child
+ * FramePool instances, with automatic per-child error aggregation.
  */
-class FrameMessageAllocator {
+class FrameMessageAllocator : public IAggregateLifecycleComponent<NoAggregateConfig, FramePool, FramePool, FramePool> {
    public:
+    using AggregateBase = IAggregateLifecycleComponent<NoAggregateConfig, FramePool, FramePool, FramePool>;
+
     /**
      * @brief Constructs allocator from externally owned frame pools.
      * @param cc_pool CAN-CC frame pool reference
@@ -26,57 +32,13 @@ class FrameMessageAllocator {
      */
     FrameMessageAllocator(FramePool& cc_pool, FramePool& fd_pool, FramePool& xl_pool);
 
-    ~FrameMessageAllocator() = default;
-
-    /**
-     * @brief Configures all underlying pools.
-     *
-     * If `SPIOPEN_BROKER_FRAME_POOL_SIZE_CONFIGURABLE` is enabled, per-pool message counts
-     * are validated to be within KConfig maximums for their CAN message type.
-     *
-     * If `SPIOPEN_BROKER_FRAME_POOL_SIZE_CONFIGURABLE` is disabled, per-pool message counts
-     * must exactly match compile-time KConfig maximums.
-     *
-     * This function also validates that `frame_buffer_size` for each pool meets the minimum
-     * frame-size requirement of its target CAN message type (CC, FD, XL).
-     *
-     * @param cc_config CAN-CC pool config
-     * @param fd_config CAN-FD pool config
-     * @param xl_config CAN-XL pool config
-     * @return Success when all configs are accepted; error if any pool rejects configuration
-     */
-    etl::expected<void, LifecycleError> Configure(const FramePoolConfig& cc_config, const FramePoolConfig& fd_config,
-                                                  const FramePoolConfig& xl_config);
-
-    /**
-     * @brief Initializes all underlying pools.
-     * @return Success on full initialization; error if any pool fails
-     */
-    etl::expected<void, LifecycleError> Initialize();
-
-    /**
-     * @brief Activates all underlying pools for allocation.
-     * @return Success when all pools enter Active state; error if any pool fails
-     */
-    etl::expected<void, LifecycleError> Start();
-
-    /**
-     * @brief Deactivates allocation on all underlying pools while preserving requeue behavior.
-     * @return Success when all pools enter Inactive state; error if any pool fails
-     */
-    etl::expected<void, LifecycleError> Stop();
-
-    /**
-     * @brief Deinitializes all underlying pools.
-     * @return Success on full deinitialization; error if any pool fails
-     */
-    etl::expected<void, LifecycleError> Deinitialize();
+    ~FrameMessageAllocator() override = default;
 
     /**
      * @brief Gets combined lifecycle state across all pools.
      * @return Aggregated state (`LifecycleState::Mixed` when pools are inconsistent)
      */
-    LifecycleState GetState() const;
+    LifecycleState GetState() const override;
 
     /**
      * @brief Allocates a frame message from the smallest suitable pool.
@@ -102,37 +64,48 @@ class FrameMessageAllocator {
         format::CanMessageType can_message_type, message::MessageType message_type,
         const publisher::FramePublisherHandle_t* publisher_handle = nullptr, uint32_t timeout_ticks = 0U);
 
+   protected:
+    /**
+     * @brief Validates and normalizes child pool configurations before child Configure() fanout.
+     *
+     * Applies default RTOS queue names when config.name is nullptr, validates frame_buffer_size
+     * meets the minimum for each CAN message type, enforces KConfig message count constraints,
+     * and validates that disabled CAN types have zero message counts.
+     *
+     * @param child_config Tuple of (cc_config, fd_config, xl_config)
+     * @return Normalized child config tuple on success, or aggregate error on validation failure
+     */
+    etl::expected<ChildConfigTuple, ErrorType> ValidateAndNormalizeChildrenConfigurations(
+        const ChildConfigTuple& child_config) override;
+
    private:
+    static constexpr size_t kCcPoolIndex = 0;
+    static constexpr size_t kFdPoolIndex = 1;
+    static constexpr size_t kXlPoolIndex = 2;
+
     /**
      * @brief Validates and normalizes one pool config for allocator-managed frame type.
-     * @param config Input config for one backing `FramePool`
+     * @param config Input config for one backing FramePool
      * @param frame_type CAN frame type handled by that pool (CC/FD/XL)
-     * @param default_name Default queue name to apply when `config.name` is nullptr
+     * @param default_name Default queue name to apply when config.name is nullptr
      * @return Normalized config (e.g., defaulted name) or lifecycle configuration error
      */
-    etl::expected<FramePoolConfig, LifecycleError> ValidateAndNormalizePoolConfig(const FramePoolConfig& config,
-                                                                                  format::CanMessageType frame_type,
-                                                                                  const char* default_name) const;
-
-    LifecycleState CombinePoolStates(LifecycleState cc_state, LifecycleState fd_state, LifecycleState xl_state) const;
+    static etl::expected<FramePoolConfig, LifecycleError> ValidateAndNormalizePoolConfig(
+        const FramePoolConfig& config, format::CanMessageType frame_type, const char* default_name);
 
     /**
      * @brief Selects backing pool for requested payload length.
      * @param required_payload_bytes Minimum payload bytes requested
-     * @return Pointer to selected `FramePool`, or `nullptr` if unsupported
+     * @return Pointer to selected FramePool, or nullptr if unsupported
      */
     FramePool* SelectPoolForPayloadSize(size_t required_payload_bytes);
 
     /**
      * @brief Selects backing pool for requested CAN message type.
      * @param can_message_type CAN message type to allocate from (CC/FD/XL)
-     * @return Pointer to selected `FramePool`, or `nullptr` if unsupported
+     * @return Pointer to selected FramePool, or nullptr if unsupported
      */
     FramePool* SelectPoolForCanMessageType(format::CanMessageType can_message_type);
-
-    FramePool& cc_pool_;
-    FramePool& fd_pool_;
-    FramePool& xl_pool_;
 };
 
 }  // namespace spiopen::broker

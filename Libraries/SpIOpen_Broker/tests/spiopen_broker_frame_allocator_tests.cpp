@@ -59,7 +59,10 @@ struct AllocatorHarness {
           xl_config{kXlCount, format::MAX_CAN_XL_FRAME_SIZE, etl::span<uint8_t>(xl_storage.data(), xl_storage.size())} {
     }
 
-    etl::expected<void, LifecycleError> ConfigureAll() { return allocator.Configure(cc_config, fd_config, xl_config); }
+    etl::expected<void, FrameMessageAllocator::ErrorType> ConfigureAll() {
+        return allocator.Configure(FrameMessageAllocator::ConfigType{
+            NoAggregateConfig{}, FrameMessageAllocator::AggregateBase::ChildConfigTuple{cc_config, fd_config, xl_config}});
+    }
 };
 
 size_t GetAllocatedMessageBufferSize(FrameMessage* message) {
@@ -89,6 +92,9 @@ TEST(SpIOpen_Broker_FrameAllocator, LifecycleTransitionsAcrossPools) {
 
     ASSERT_TRUE(harness.allocator.Deinitialize());
     EXPECT_EQ(harness.allocator.GetState(), LifecycleState::Configured);
+
+    ASSERT_TRUE(harness.allocator.Reset());
+    EXPECT_EQ(harness.allocator.GetState(), LifecycleState::Unconfigured);
 }
 
 TEST(SpIOpen_Broker_FrameAllocator, AllocateRoutesByPayloadSize) {
@@ -191,4 +197,38 @@ TEST(SpIOpen_Broker_FrameAllocator, AllocateRejectsUnsupportedPayloadSize) {
     if (!ret) {
         EXPECT_EQ(ret.error(), FramePoolError::UnsupportedFrameSize);
     }
+}
+
+TEST(SpIOpen_Broker_FrameAllocator, ResetAfterFullLifecycle) {
+    AllocatorHarness harness;
+    ASSERT_TRUE(harness.ConfigureAll());
+    EXPECT_EQ(harness.allocator.GetState(), LifecycleState::Configured);
+
+    ASSERT_TRUE(harness.allocator.Initialize());
+    ASSERT_TRUE(harness.allocator.Start());
+    ASSERT_TRUE(harness.allocator.Stop());
+    ASSERT_TRUE(harness.allocator.Deinitialize());
+    EXPECT_EQ(harness.allocator.GetState(), LifecycleState::Configured);
+
+    ASSERT_TRUE(harness.allocator.Reset());
+    EXPECT_EQ(harness.allocator.GetState(), LifecycleState::Unconfigured);
+
+    ASSERT_TRUE(harness.ConfigureAll());
+    EXPECT_EQ(harness.allocator.GetState(), LifecycleState::Configured);
+}
+
+TEST(SpIOpen_Broker_FrameAllocator, ConfigureValidationRejectsInvalidFrameBufferSize) {
+    AllocatorHarness harness;
+    FramePoolConfig bad_cc_config = harness.cc_config;
+    bad_cc_config.frame_buffer_size = 0U;
+
+    auto ret = harness.allocator.Configure(
+        FrameMessageAllocator::ConfigType{NoAggregateConfig{},
+                                          FrameMessageAllocator::AggregateBase::ChildConfigTuple{
+                                              bad_cc_config, harness.fd_config, harness.xl_config}});
+    EXPECT_FALSE(ret);
+    if (!ret) {
+        EXPECT_EQ(ret.error().error, LifecycleErrorType::InvalidConfiguration);
+    }
+    EXPECT_EQ(harness.allocator.GetState(), LifecycleState::Unconfigured);
 }

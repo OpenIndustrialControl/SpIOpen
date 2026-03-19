@@ -94,6 +94,13 @@ class FrameMailbox : public ILifecycleComponent<FrameMailboxConfig, LifecycleErr
     etl::expected<void, LifecycleError> Configure(const FrameMailboxConfig& config) override;
 
     /**
+     * @brief Validates and normalizes mailbox configuration.
+     * @param config Proposed mailbox config
+     * @return Normalized mailbox config on success, InvalidConfiguration on validation failure
+     */
+    etl::expected<ConfigType, ErrorType> ValidateAndNormalizeConfiguration(const ConfigType& config) override;
+
+    /**
      * @brief Initializes mailbox queue resources.
      *
      * Initializes resources and transitions to Inactive state. Operations are

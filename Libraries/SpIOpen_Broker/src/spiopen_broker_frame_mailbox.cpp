@@ -39,40 +39,49 @@ FrameMailbox::FrameMailbox()
 etl::expected<void, LifecycleError> FrameMailbox::Configure(const FrameMailboxConfig& config) {
     LifecycleState current_state = state_.load(std::memory_order_relaxed);
     if ((current_state != LifecycleState::Unconfigured) && (current_state != LifecycleState::Configured)) {
-        return etl::unexpected(LifecycleErrorType::InvalidState);
+        return etl::unexpected(LifecycleError(LifecycleErrorType::InvalidState));
     }
     state_.store(LifecycleState::Configuring, std::memory_order_release);
 
-    if ((config.depth == 0U) || (config.depth > BROKER_MAILBOX_MAX_DEPTH)) {
+    auto normalized_config_ret = ValidateAndNormalizeConfiguration(config);
+    if (!normalized_config_ret) {
         state_.store(LifecycleState::Unconfigured, std::memory_order_release);
-        return etl::unexpected(LifecycleErrorType::InvalidArgument);
+        return etl::unexpected(normalized_config_ret.error());
+    }
+
+    config_ = *normalized_config_ret;
+    state_.store(LifecycleState::Configured, std::memory_order_release);
+    return {};
+}
+
+etl::expected<FrameMailbox::ConfigType, FrameMailbox::ErrorType> FrameMailbox::ValidateAndNormalizeConfiguration(
+    const ConfigType& config) {
+    if ((config.depth == 0U) || (config.depth > BROKER_MAILBOX_MAX_DEPTH)) {
+        return etl::unexpected(LifecycleError(LifecycleErrorType::InvalidConfiguration));
     }
     if (!BROKER_MAILBOX_DEPTH_CONFIGURABLE && (config.depth != BROKER_MAILBOX_MAX_DEPTH)) {
-        state_.store(LifecycleState::Unconfigured, std::memory_order_release);
-        return etl::unexpected(LifecycleErrorType::InvalidArgument);
+        return etl::unexpected(LifecycleError(LifecycleErrorType::InvalidConfiguration));
     }
 
     const size_t queue_storage_required_bytes = config.depth * sizeof(FrameMessage*);
     if (!config.queue_storage.empty() && (config.queue_storage.size() < queue_storage_required_bytes)) {
-        state_.store(LifecycleState::Unconfigured, std::memory_order_release);
-        return etl::unexpected(LifecycleErrorType::InvalidArgument);
+        return etl::unexpected(LifecycleError(LifecycleErrorType::InvalidConfiguration));
     }
 
-    config_ = config;
+    ConfigType normalized_config = config;
     if (!BROKER_MAILBOX_DEPTH_CONFIGURABLE) {
-        config_.depth = BROKER_MAILBOX_MAX_DEPTH;
+        normalized_config.depth = BROKER_MAILBOX_MAX_DEPTH;
     }
-    state_.store(LifecycleState::Configured, std::memory_order_release);
-    return {};
+    return normalized_config;
 }
 
 etl::expected<void, LifecycleError> FrameMailbox::Initialize() {
     const LifecycleState current_state = state_.load(std::memory_order_relaxed);
     if (current_state == LifecycleState::Unconfigured) {
-        return etl::unexpected(LifecycleErrorType::NotConfigured);
+        return etl::unexpected(LifecycleError(LifecycleErrorType::NotConfigured));
     }
     if (current_state != LifecycleState::Configured) {
-        return etl::unexpected(LifecycleErrorType::InvalidState);
+        return etl::unexpected(LifecycleError(LifecycleErrorType::InvalidState));
     }
 
     state_.store(LifecycleState::Initializing, std::memory_order_release);
@@ -93,7 +102,7 @@ etl::expected<void, LifecycleError> FrameMailbox::Initialize() {
     queue_handle_ = osMessageQueueNew(static_cast<uint32_t>(config_.depth), sizeof(FrameMessage*), &queue_attr);
     if (queue_handle_ == nullptr) {
         state_.store(LifecycleState::Configured, std::memory_order_release);
-        return etl::unexpected(LifecycleErrorType::ResourceFailure);
+        return etl::unexpected(LifecycleError(LifecycleErrorType::ResourceFailure));
     }
 
     state_.store(LifecycleState::Inactive, std::memory_order_release);
@@ -103,10 +112,10 @@ etl::expected<void, LifecycleError> FrameMailbox::Initialize() {
 etl::expected<void, LifecycleError> FrameMailbox::Start() {
     const LifecycleState current_state = state_.load(std::memory_order_relaxed);
     if ((current_state == LifecycleState::Configured) || (current_state == LifecycleState::Unconfigured)) {
-        return etl::unexpected(LifecycleErrorType::NotInitialized);
+        return etl::unexpected(LifecycleError(LifecycleErrorType::NotInitialized));
     }
     if (current_state != LifecycleState::Inactive) {
-        return etl::unexpected(LifecycleErrorType::InvalidState);
+        return etl::unexpected(LifecycleError(LifecycleErrorType::InvalidState));
     }
 
     // state_.store(LifecycleState::Starting, std::memory_order_release); //skip this step in this case
@@ -116,7 +125,7 @@ etl::expected<void, LifecycleError> FrameMailbox::Start() {
 
 etl::expected<void, LifecycleError> FrameMailbox::Stop() {
     if (state_.load(std::memory_order_relaxed) != LifecycleState::Active) {
-        return etl::unexpected(LifecycleErrorType::InvalidState);
+        return etl::unexpected(LifecycleError(LifecycleErrorType::InvalidState));
     }
 
     // state_.store(LifecycleState::Stopping, std::memory_order_release); //skip this step in this case
@@ -126,25 +135,25 @@ etl::expected<void, LifecycleError> FrameMailbox::Stop() {
 
 etl::expected<void, LifecycleError> FrameMailbox::Deinitialize() {
     if (state_.load(std::memory_order_relaxed) != LifecycleState::Inactive) {
-        return etl::unexpected(LifecycleErrorType::InvalidState);
+        return etl::unexpected(LifecycleError(LifecycleErrorType::InvalidState));
     }
     // Defensive invariant check: Inactive implies queue should exist until deinit succeeds.
     if (queue_handle_ == nullptr) {
-        return etl::unexpected(LifecycleErrorType::ResourceFailure);
+        return etl::unexpected(LifecycleError(LifecycleErrorType::ResourceFailure));
     }
 
     if (osMessageQueueGetCount(queue_handle_) != 0U) {
-        return etl::unexpected(LifecycleErrorType::ResourceFailure);
+        return etl::unexpected(LifecycleError(LifecycleErrorType::ResourceFailure));
     }
 
     state_.store(LifecycleState::Deinitializing, std::memory_order_release);
     const osStatus_t delete_status = osMessageQueueDelete(queue_handle_);
     if (delete_status == osErrorISR) {
         state_.store(LifecycleState::Inactive, std::memory_order_release);
-        return etl::unexpected(LifecycleErrorType::NotAllowedInIsr);
+        return etl::unexpected(LifecycleError(LifecycleErrorType::NotAllowedInIsr));
     } else if (delete_status == osErrorResource) {
         state_.store(LifecycleState::Inactive, std::memory_order_release);
-        return etl::unexpected(LifecycleErrorType::ResourceFailure);
+        return etl::unexpected(LifecycleError(LifecycleErrorType::ResourceFailure));
     } else if (delete_status == osErrorParameter) {
         // Queue handle is invalid from RTOS perspective; finalize local state as deinitialized.
         queue_handle_ = nullptr;
@@ -162,10 +171,10 @@ etl::expected<void, LifecycleError> FrameMailbox::Deinitialize() {
 etl::expected<void, LifecycleError> FrameMailbox::Reset() {
     const LifecycleState current_state = state_.load(std::memory_order_relaxed);
     if (current_state == LifecycleState::Unconfigured) {
-        return etl::unexpected(LifecycleErrorType::NotConfigured);
+        return etl::unexpected(LifecycleError(LifecycleErrorType::NotConfigured));
     }
     if (current_state != LifecycleState::Configured) {
-        return etl::unexpected(LifecycleErrorType::InvalidState);
+        return etl::unexpected(LifecycleError(LifecycleErrorType::InvalidState));
     }
 
     config_ = FrameMailboxConfig{0U, etl::span<uint8_t>(), nullptr};

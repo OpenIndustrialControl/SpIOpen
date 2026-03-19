@@ -108,7 +108,7 @@ TEST(SpIOpen_Broker_FramePool, ConfigureRejectsInsufficientStorage) {
     auto ret = pool.Configure(config);
     EXPECT_FALSE(ret);
     if (!ret) {
-        EXPECT_EQ(ret.error().error, LifecycleErrorType::InvalidArgument);
+        EXPECT_EQ(ret.error().error, LifecycleErrorType::InvalidConfiguration);
     }
 }
 

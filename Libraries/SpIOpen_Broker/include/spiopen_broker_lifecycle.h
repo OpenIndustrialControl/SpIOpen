@@ -8,6 +8,7 @@ SPDX-License-Identifier: Apache-2.0
 
 #include <cstddef>
 #include <cstdint>
+#include <type_traits>
 #include <utility>
 
 #include "etl/expected.h"
@@ -114,6 +115,25 @@ struct AggregateLifecycleError<> {
 using LifecycleError = AggregateLifecycleError<>;
 
 /**
+ * @brief Sentinel aggregate configuration for aggregate components with no local config.
+ */
+struct NoAggregateConfig {};
+
+/**
+ * @brief Configuration bundle for aggregate lifecycle components.
+ *
+ * Keeps aggregate-local configuration separate from the tuple of child configurations.
+ *
+ * @tparam AggregateConfigT Aggregate-local configuration type
+ * @tparam ChildConfigTs Child component configuration types
+ */
+template <typename AggregateConfigT, typename... ChildConfigTs>
+struct AggregateConfigBundle {
+    AggregateConfigT local{};
+    etl::tuple<ChildConfigTs...> children{};
+};
+
+/**
  * @brief Pure-virtual interface for broker components following the common lifecycle contract.
  *
  * Enforces the common lifecycle transition API with shared lifecycle errors.
@@ -135,6 +155,17 @@ class ILifecycleComponent {
      * @return Success when configuration is accepted
      */
     virtual etl::expected<void, TError> Configure(const ConfigT& config) = 0;
+
+    /**
+     * @brief Validates and normalizes a proposed component configuration.
+     *
+     * Implementations should use this as the single source of configuration validation.
+     * Configuration-specific failures should return LifecycleErrorType::InvalidConfiguration.
+     *
+     * @param config Proposed component configuration
+     * @return Normalized configuration on success
+     */
+    virtual etl::expected<ConfigT, TError> ValidateAndNormalizeConfiguration(const ConfigT& config) = 0;
 
     /**
      * @brief Initializes resources and transitions to Inactive on success.
@@ -178,17 +209,20 @@ class ILifecycleComponent {
  * @brief Interface helper for lifecycle components composed from child lifecycle components.
  *
  * This interface derives aggregate ConfigType and ErrorType from child component types.
- * ConfigType is an etl::tuple of each child's ConfigType, and ErrorType is an
- * AggregateLifecycleError of each child's ErrorType.
+ * ConfigType is an AggregateConfigBundle containing aggregate-local config and an
+ * etl::tuple of child configs. ErrorType is an AggregateLifecycleError of child errors.
  *
+ * @tparam AggregateConfigT Aggregate-local configuration type (use NoAggregateConfig when none)
  * @tparam ChildComponentsT Child lifecycle component types
  */
-template <typename... ChildComponentsT>
+template <typename AggregateConfigT = NoAggregateConfig, typename... ChildComponentsT>
 class IAggregateLifecycleComponent
-    : public ILifecycleComponent<etl::tuple<typename ChildComponentsT::ConfigType...>,
+    : public ILifecycleComponent<AggregateConfigBundle<AggregateConfigT, typename ChildComponentsT::ConfigType...>,
                                  AggregateLifecycleError<typename ChildComponentsT::ErrorType...>> {
    public:
-    using ConfigType = etl::tuple<typename ChildComponentsT::ConfigType...>;
+    using AggregateConfigType = AggregateConfigT;
+    using ChildConfigTuple = etl::tuple<typename ChildComponentsT::ConfigType...>;
+    using ConfigType = AggregateConfigBundle<AggregateConfigType, typename ChildComponentsT::ConfigType...>;
     using ErrorType = AggregateLifecycleError<typename ChildComponentsT::ErrorType...>;
     using BaseType = ILifecycleComponent<ConfigType, ErrorType>;
     using ChildComponentsTuple = etl::tuple<ChildComponentsT&...>;
@@ -199,7 +233,7 @@ class IAggregateLifecycleComponent
         if (!normalized_config) {
             return etl::unexpected(normalized_config.error());
         }
-        return ConfigureChildren(*normalized_config);
+        return ConfigureChildren(normalized_config->children);
     }
 
     etl::expected<void, ErrorType> Initialize() override { return InitializeChildren(); }
@@ -215,126 +249,125 @@ class IAggregateLifecycleComponent
     ~IAggregateLifecycleComponent() override = default;
 
    protected:
-    explicit IAggregateLifecycleComponent(ChildComponentsT&... child_components) : child_components_(child_components...) {}
+    explicit IAggregateLifecycleComponent(ChildComponentsT&... child_components)
+        : child_components_(child_components...) {}
 
     /**
      * @brief Optional pre-configure hook for aggregate components.
      *
-     * Default behavior is pass-through (no normalization). Derived classes can override
-     * to validate and normalize aggregate configuration before child Configure() fanout.
+     * Default behavior validates and normalizes both local aggregate config and children.
+     * Overriding classes can add validation/normalization before or after calling helpers.
      *
      * @param config Proposed aggregate configuration
      * @return Normalized config on success, or high-level/aggregate configuration error
      */
-    virtual etl::expected<ConfigType, ErrorType> ValidateAndNormalizeConfiguration(const ConfigType& config) {
-        return config;
+    etl::expected<ConfigType, ErrorType> ValidateAndNormalizeConfiguration(const ConfigType& config) override {
+        auto local_ret = ValidateAndNormalizeLocalConfiguration(config.local);
+        if (!local_ret) {
+            return etl::unexpected(local_ret.error());
+        }
+        auto children_ret = ValidateAndNormalizeChildrenConfigurations(config.children);
+        if (!children_ret) {
+            return etl::unexpected(children_ret.error());
+        }
+        return ConfigType{*local_ret, *children_ret};
     }
 
-    etl::expected<void, ErrorType> ConfigureChildren(const ConfigType& config) {
-        return ConfigureChildrenImpl(config, std::index_sequence_for<ChildComponentsT...>{});
+    /**
+     * @brief Validates and normalizes aggregate-local configuration only.
+     *
+     * Default behavior is pass-through.
+     *
+     * @param local_config Proposed local aggregate configuration
+     * @return Normalized local aggregate configuration, or lifecycle error
+     */
+    virtual etl::expected<AggregateConfigType, ErrorType> ValidateAndNormalizeLocalConfiguration(
+        const AggregateConfigType& local_config) {
+        return local_config;
     }
 
-    etl::expected<void, ErrorType> InitializeChildren() { return InitializeChildrenImpl(std::index_sequence_for<ChildComponentsT...>{}); }
+    /**
+     * @brief Validates and normalizes each child configuration sequentially.
+     *
+     * Calls child_i.ValidateAndNormalizeConfiguration(config_i) in child order.
+     * Always calls all children and aggregates all child validation errors.
+     *
+     * @param child_config Proposed child configuration tuple
+     * @return Normalized child config tuple on success, or aggregated child error details
+     */
+    virtual etl::expected<ChildConfigTuple, ErrorType> ValidateAndNormalizeChildrenConfigurations(
+        const ChildConfigTuple& child_config) {
+        return ValidateAndNormalizeChildrenConfigurationsImpl(child_config, std::index_sequence_for<ChildComponentsT...>{});
+    }
 
-    etl::expected<void, ErrorType> StartChildren() { return StartChildrenImpl(std::index_sequence_for<ChildComponentsT...>{}); }
+    etl::expected<void, ErrorType> ConfigureChildren(const ChildConfigTuple& child_config) {
+        return FanOutToChildren(
+            [&child_config](auto idx, auto& child) {
+                return child.Configure(etl::get<decltype(idx)::value>(child_config));
+            });
+    }
 
-    etl::expected<void, ErrorType> StopChildren() { return StopChildrenImpl(std::index_sequence_for<ChildComponentsT...>{}); }
+    etl::expected<void, ErrorType> InitializeChildren() {
+        return FanOutToChildren([](auto, auto& child) { return child.Initialize(); });
+    }
+
+    etl::expected<void, ErrorType> StartChildren() {
+        return FanOutToChildren([](auto, auto& child) { return child.Start(); });
+    }
+
+    etl::expected<void, ErrorType> StopChildren() {
+        return FanOutToChildren([](auto, auto& child) { return child.Stop(); });
+    }
 
     etl::expected<void, ErrorType> DeinitializeChildren() {
-        return DeinitializeChildrenImpl(std::index_sequence_for<ChildComponentsT...>{});
+        return FanOutToChildren([](auto, auto& child) { return child.Deinitialize(); });
     }
 
-    etl::expected<void, ErrorType> ResetChildren() { return ResetChildrenImpl(std::index_sequence_for<ChildComponentsT...>{}); }
+    etl::expected<void, ErrorType> ResetChildren() {
+        return FanOutToChildren([](auto, auto& child) { return child.Reset(); });
+    }
 
     ChildComponentsTuple& GetChildComponents() { return child_components_; }
     const ChildComponentsTuple& GetChildComponents() const { return child_components_; }
 
    private:
     template <size_t... Indexes>
-    etl::expected<void, ErrorType> ConfigureChildrenImpl(const ConfigType& config, std::index_sequence<Indexes...>) {
+    etl::expected<ChildConfigTuple, ErrorType> ValidateAndNormalizeChildrenConfigurationsImpl(
+        const ChildConfigTuple& input_config, std::index_sequence<Indexes...>) {
+        ChildConfigTuple normalized_config = input_config;
         ChildErrorDetailTuple child_errors{};
+
         (..., [&]() {
-            auto ret = etl::get<Indexes>(child_components_).Configure(etl::get<Indexes>(config));
-            if (!ret) {
-                etl::get<Indexes>(child_errors) = ret.error();
+            auto child_config_ret =
+                etl::get<Indexes>(child_components_).ValidateAndNormalizeConfiguration(etl::get<Indexes>(input_config));
+            if (child_config_ret) {
+                etl::get<Indexes>(normalized_config) = *child_config_ret;
+            } else {
+                etl::get<Indexes>(child_errors) = child_config_ret.error();
             }
         }());
+
         auto aggregate_error = ErrorType::TryFromChildErrors(child_errors);
         if (aggregate_error.has_value()) {
             return etl::unexpected(*aggregate_error);
         }
-        return {};
+        return normalized_config;
     }
 
-    template <size_t... Indexes>
-    etl::expected<void, ErrorType> InitializeChildrenImpl(std::index_sequence<Indexes...>) {
-        ChildErrorDetailTuple child_errors{};
-        (..., [&]() {
-            auto ret = etl::get<Indexes>(child_components_).Initialize();
-            if (!ret) {
-                etl::get<Indexes>(child_errors) = ret.error();
-            }
-        }());
-        auto aggregate_error = ErrorType::TryFromChildErrors(child_errors);
-        if (aggregate_error.has_value()) {
-            return etl::unexpected(*aggregate_error);
-        }
-        return {};
+    /**
+     * @brief Calls fn(integral_constant<I>, child_I) for each child, collecting per-child errors.
+     * @tparam Fn Callable taking (std::integral_constant<size_t, I>, ChildComponent&)
+     */
+    template <typename Fn>
+    etl::expected<void, ErrorType> FanOutToChildren(Fn&& fn) {
+        return FanOutToChildrenImpl(std::index_sequence_for<ChildComponentsT...>{}, static_cast<Fn&&>(fn));
     }
 
-    template <size_t... Indexes>
-    etl::expected<void, ErrorType> StartChildrenImpl(std::index_sequence<Indexes...>) {
+    template <size_t... Indexes, typename Fn>
+    etl::expected<void, ErrorType> FanOutToChildrenImpl(std::index_sequence<Indexes...>, Fn&& fn) {
         ChildErrorDetailTuple child_errors{};
         (..., [&]() {
-            auto ret = etl::get<Indexes>(child_components_).Start();
-            if (!ret) {
-                etl::get<Indexes>(child_errors) = ret.error();
-            }
-        }());
-        auto aggregate_error = ErrorType::TryFromChildErrors(child_errors);
-        if (aggregate_error.has_value()) {
-            return etl::unexpected(*aggregate_error);
-        }
-        return {};
-    }
-
-    template <size_t... Indexes>
-    etl::expected<void, ErrorType> StopChildrenImpl(std::index_sequence<Indexes...>) {
-        ChildErrorDetailTuple child_errors{};
-        (..., [&]() {
-            auto ret = etl::get<Indexes>(child_components_).Stop();
-            if (!ret) {
-                etl::get<Indexes>(child_errors) = ret.error();
-            }
-        }());
-        auto aggregate_error = ErrorType::TryFromChildErrors(child_errors);
-        if (aggregate_error.has_value()) {
-            return etl::unexpected(*aggregate_error);
-        }
-        return {};
-    }
-
-    template <size_t... Indexes>
-    etl::expected<void, ErrorType> DeinitializeChildrenImpl(std::index_sequence<Indexes...>) {
-        ChildErrorDetailTuple child_errors{};
-        (..., [&]() {
-            auto ret = etl::get<Indexes>(child_components_).Deinitialize();
-            if (!ret) {
-                etl::get<Indexes>(child_errors) = ret.error();
-            }
-        }());
-        auto aggregate_error = ErrorType::TryFromChildErrors(child_errors);
-        if (aggregate_error.has_value()) {
-            return etl::unexpected(*aggregate_error);
-        }
-        return {};
-    }
-
-    template <size_t... Indexes>
-    etl::expected<void, ErrorType> ResetChildrenImpl(std::index_sequence<Indexes...>) {
-        ChildErrorDetailTuple child_errors{};
-        (..., [&]() {
-            auto ret = etl::get<Indexes>(child_components_).Reset();
+            auto ret = fn(std::integral_constant<size_t, Indexes>{}, etl::get<Indexes>(child_components_));
             if (!ret) {
                 etl::get<Indexes>(child_errors) = ret.error();
             }
