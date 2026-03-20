@@ -66,17 +66,9 @@ etl::expected<FramePool::ConfigType, FramePool::ErrorType> FramePool::ValidateAn
     } else {
         if (required_full_layout == 0U) {
             // Zero-count pools are valid with no storage.
-        }
-#ifdef CONFIG_SPIOPEN_MESSAGE_FRAME_POOL_SIZE_CONFIGURABLE
-        else {
-            // Internal backing storage is allocated at Initialize() when enabled.
-        }
-#else
-        else {
-            // #NOTE: Kconfig docs describe static-only mode; requiring explicit external storage here.
+        } else if (!MESSAGE_ALLOW_HEAP_ALLOCATION_AT_INIT) {
             return etl::unexpected(LifecycleError(LifecycleErrorType::InvalidConfiguration));
         }
-#endif
     }
 
     return config;
@@ -110,17 +102,16 @@ etl::expected<void, LifecycleError> FramePool::Initialize() {
         }
         active_storage_ = config_.pool_storage;
     } else {
-#ifdef CONFIG_SPIOPEN_MESSAGE_FRAME_POOL_SIZE_CONFIGURABLE
+        if (!MESSAGE_ALLOW_HEAP_ALLOCATION_AT_INIT) {
+            state_.store(LifecycleState::Configured, std::memory_order_release);
+            return etl::unexpected(LifecycleError(LifecycleErrorType::InvalidState));
+        }
         owned_storage_ = new (std::nothrow) uint8_t[total_required_size];
         if (owned_storage_ == nullptr) {
             state_.store(LifecycleState::Configured, std::memory_order_release);
             return etl::unexpected(LifecycleError(LifecycleErrorType::ResourceFailure));
         }
         active_storage_ = etl::span<uint8_t>(owned_storage_, total_required_size);
-#else
-        state_.store(LifecycleState::Configured, std::memory_order_release);
-        return etl::unexpected(LifecycleError(LifecycleErrorType::InvalidArgument));
-#endif
     }
 
     // ONCE WE HAVE POTENTIALLY ALLOCATED MEMORY, WE CAN'T FALL BACK TO THE CONFIGURED STATE WITHOUT DE-ALLOCATING THE

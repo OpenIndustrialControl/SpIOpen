@@ -72,14 +72,8 @@ etl::expected<FramePoolConfig, LifecycleError> FrameMessageAllocator::ValidateAn
         return effective_config;
     }
 
-    if (MESSAGE_FRAME_POOL_SIZE_CONFIGURABLE) {
-        if (effective_config.message_count > max_message_count) {
-            return etl::unexpected(LifecycleError(LifecycleErrorType::InvalidConfiguration));
-        }
-    } else {
-        if (effective_config.message_count != max_message_count) {
-            return etl::unexpected(LifecycleError(LifecycleErrorType::InvalidConfiguration));
-        }
+    if (effective_config.message_count > max_message_count) {
+        return etl::unexpected(LifecycleError(LifecycleErrorType::InvalidConfiguration));
     }
 
     return effective_config;

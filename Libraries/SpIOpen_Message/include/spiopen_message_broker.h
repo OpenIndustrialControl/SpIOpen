@@ -43,7 +43,7 @@ enum class FrameBrokerError : uint8_t {
  * The broker always creates and owns its inbox mailbox internally; inbox_mailbox_config
  * specifies depth and optional backing memory (static vs dynamic allocation) for that mailbox.
  * Thread stack memory may be supplied via thread_stack_storage or allocated during
- * Initialize() when enabled by build configuration.
+ * Initialize() when MESSAGE_ALLOW_HEAP_ALLOCATION_AT_INIT is enabled.
  */
 struct FrameBrokerConfig {
     const char* thread_name;                 /**< Broker thread name, used by RTOS for diagnostics */
@@ -64,15 +64,6 @@ static constexpr size_t FRAME_BROKER_MAX_SUBSCRIBERS = 8U;
 static constexpr size_t MESSAGE_THREAD_MAX_STACK_SIZE = CONFIG_SPIOPEN_MESSAGE_THREAD_MAX_STACK_SIZE;
 #else
 static constexpr size_t MESSAGE_THREAD_MAX_STACK_SIZE = 2048U;
-#endif
-
-#ifdef CONFIG_SPIOPEN_MESSAGE_THREAD_STACK_MEMORY_CONFIGURABLE
-static constexpr bool MESSAGE_THREAD_STACK_MEMORY_CONFIGURABLE =
-    (CONFIG_SPIOPEN_MESSAGE_THREAD_STACK_MEMORY_CONFIGURABLE != 0);
-#else
-// #NOTE: In host/unit-test builds where Kconfig values are not injected as compile definitions,
-// default to runtime-configurable stack memory to keep tests deterministic.
-static constexpr bool MESSAGE_THREAD_STACK_MEMORY_CONFIGURABLE = true;
 #endif
 
 /**

@@ -35,12 +35,6 @@ enum class FramePoolError : uint8_t {
     ResourceFailure,      /**< RTOS resource creation or setup failed */
 };
 
-#ifdef CONFIG_SPIOPEN_MESSAGE_FRAME_POOL_SIZE_CONFIGURABLE
-static constexpr bool MESSAGE_FRAME_POOL_SIZE_CONFIGURABLE = true;
-#else
-static constexpr bool MESSAGE_FRAME_POOL_SIZE_CONFIGURABLE = false;
-#endif
-
 #ifdef CONFIG_SPIOPEN_FRAME_CAN_XL_ENABLE
 static constexpr bool MESSAGE_CAN_XL_ENABLED = true;
 #else
@@ -73,10 +67,8 @@ static constexpr size_t MESSAGE_FRAME_POOL_MAX_FRAMES_BY_CAN_MESSAGE_TYPE[] = {
  *
  * The pool maintains an internal queue of available messages. pool_storage is the
  * optional backing memory for that queue (and any pool-internal layout): if non-empty,
- * the implementation uses it; if empty, the pool allocates backing memory internally.
-
- If SPIOPEN_MESSAGE_FRAME_POOL_SIZE_CONFIGURABLE is false, then the pool_storage must not be null. However, if it is
- true, then the pool_storage may nor may not be null.
+ * the implementation uses it; if empty, Initialize() allocates backing memory only
+ * when MESSAGE_ALLOW_HEAP_ALLOCATION_AT_INIT is enabled.
  */
 struct FramePoolConfig {
     size_t message_count;            /**< Number of FrameMessage objects in this pool. Zero is valid. */

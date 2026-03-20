@@ -53,20 +53,16 @@ etl::expected<FrameMailbox::ConfigType, FrameMailbox::ErrorType> FrameMailbox::V
     if ((config.depth == 0U) || (config.depth > MESSAGE_MAILBOX_MAX_DEPTH)) {
         return etl::unexpected(LifecycleError(LifecycleErrorType::InvalidConfiguration));
     }
-    if (!MESSAGE_MAILBOX_DEPTH_CONFIGURABLE && (config.depth != MESSAGE_MAILBOX_MAX_DEPTH)) {
-        return etl::unexpected(LifecycleError(LifecycleErrorType::InvalidConfiguration));
-    }
 
     const size_t queue_storage_required_bytes = config.depth * sizeof(FrameMessage*);
     if (!config.queue_storage.empty() && (config.queue_storage.size() < queue_storage_required_bytes)) {
         return etl::unexpected(LifecycleError(LifecycleErrorType::InvalidConfiguration));
     }
-
-    ConfigType normalized_config = config;
-    if (!MESSAGE_MAILBOX_DEPTH_CONFIGURABLE) {
-        normalized_config.depth = MESSAGE_MAILBOX_MAX_DEPTH;
+    if (!MESSAGE_ALLOW_HEAP_ALLOCATION_AT_INIT && config.queue_storage.empty()) {
+        return etl::unexpected(LifecycleError(LifecycleErrorType::InvalidConfiguration));
     }
-    return normalized_config;
+
+    return config;
 }
 
 etl::expected<void, LifecycleError> FrameMailbox::Initialize() {

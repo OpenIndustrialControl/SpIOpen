@@ -15,23 +15,11 @@ using namespace spiopen::message;
 namespace {
 
 struct AllocatorHarness {
-#if MESSAGE_FRAME_POOL_SIZE_CONFIGURABLE
     static constexpr size_t kCcCount = 2U;
-#else
-    static constexpr size_t kCcCount = MESSAGE_FRAME_POOL_MAX_CC_FRAMES;
-#endif
     static constexpr size_t kCcBytes = BytesToAllocateForFramePool(kCcCount, format::CanMessageType::CanCc);
-#if MESSAGE_FRAME_POOL_SIZE_CONFIGURABLE
     static constexpr size_t kFdCount = 2U;
-#else
-    static constexpr size_t kFdCount = MESSAGE_FRAME_POOL_MAX_FD_FRAMES;
-#endif
     static constexpr size_t kFdBytes = BytesToAllocateForFramePool(kFdCount, format::CanMessageType::CanFd);
-#if MESSAGE_FRAME_POOL_SIZE_CONFIGURABLE
     static constexpr size_t kXlCount = MESSAGE_CAN_XL_ENABLED ? 2U : 0U;
-#else
-    static constexpr size_t kXlCount = MESSAGE_CAN_XL_ENABLED ? MESSAGE_FRAME_POOL_MAX_XL_FRAMES : 0U;
-#endif
     static constexpr size_t kXlBytes = BytesToAllocateForFramePool(kXlCount, format::CanMessageType::CanXl);
 
     std::array<uint8_t, kCcBytes> cc_storage{};

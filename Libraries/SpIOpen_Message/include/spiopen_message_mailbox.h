@@ -27,14 +27,6 @@ static constexpr size_t MESSAGE_MAILBOX_MAX_DEPTH = CONFIG_SPIOPEN_MESSAGE_MAILB
 static constexpr size_t MESSAGE_MAILBOX_MAX_DEPTH = 32U;
 #endif
 
-#ifdef CONFIG_SPIOPEN_MESSAGE_MAILBOX_DEPTH_CONFIGURABLE
-static constexpr bool MESSAGE_MAILBOX_DEPTH_CONFIGURABLE = (CONFIG_SPIOPEN_MESSAGE_MAILBOX_DEPTH_CONFIGURABLE != 0);
-#else
-// #NOTE: In host/unit-test builds where Kconfig values are not injected as compile definitions,
-// default to runtime-configurable depth to keep tests deterministic and decoupled from build-system plumbing.
-static constexpr bool MESSAGE_MAILBOX_DEPTH_CONFIGURABLE = true;
-#endif
-
 /**
  * @brief Error codes returned by FrameMailbox operations.
  *
@@ -58,9 +50,9 @@ enum class FrameMailboxError : uint8_t {
  * the implementation uses it; if empty, the mailbox allocates element storage
  * internally unless build configuration requires external storage. name is an
  * optional diagnostic queue name; if omitted, a library default is used.
- * SPIOPEN_MESSAGE_MAILBOX_DEPTH_CONFIGURABLE is used to determine if the mailbox depth is configurable at runtime.
- * SPIOPEN_MESSAGE_MAILBOX_MAX_DEPTH is the maximum depth of a run-time configurable mailbox,
- * or, if depth is not configurable, this is the specific fixed depth of the mailbox.
+ * SPIOPEN_MESSAGE_MAILBOX_MAX_DEPTH is the maximum allowed mailbox depth.
+ * queue_storage is optional: when omitted, Initialize() allocates queue element storage
+ * only when MESSAGE_ALLOW_HEAP_ALLOCATION_AT_INIT is enabled.
  * Queue control-block storage is always internal to each mailbox instance and
  * is not configurable at runtime.
  */

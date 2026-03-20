@@ -51,14 +51,10 @@ etl::expected<FrameBroker::ConfigType, FrameBroker::ErrorType> FrameBroker::Vali
     if ((config.thread_stack_size_bytes == 0U) || (config.thread_stack_size_bytes > MESSAGE_THREAD_MAX_STACK_SIZE)) {
         return etl::unexpected(LifecycleError(LifecycleErrorType::InvalidConfiguration));
     }
-    if (!MESSAGE_THREAD_STACK_MEMORY_CONFIGURABLE &&
-        (config.thread_stack_size_bytes != MESSAGE_THREAD_MAX_STACK_SIZE)) {
-        return etl::unexpected(LifecycleError(LifecycleErrorType::InvalidConfiguration));
-    }
     if (!config.thread_stack_storage.empty() && (config.thread_stack_storage.size() < config.thread_stack_size_bytes)) {
         return etl::unexpected(LifecycleError(LifecycleErrorType::InvalidConfiguration));
     }
-    if (!MESSAGE_THREAD_STACK_MEMORY_CONFIGURABLE && config.thread_stack_storage.empty()) {
+    if (!MESSAGE_ALLOW_HEAP_ALLOCATION_AT_INIT && config.thread_stack_storage.empty()) {
         return etl::unexpected(LifecycleError(LifecycleErrorType::InvalidConfiguration));
     }
 
@@ -69,9 +65,6 @@ etl::expected<FrameBroker::ConfigType, FrameBroker::ErrorType> FrameBroker::Vali
 
     ConfigType normalized_config = config;
     normalized_config.inbox_mailbox_config = *mailbox_config_ret;
-    if (!MESSAGE_THREAD_STACK_MEMORY_CONFIGURABLE) {
-        normalized_config.thread_stack_size_bytes = MESSAGE_THREAD_MAX_STACK_SIZE;
-    }
     return normalized_config;
 }
 
@@ -86,7 +79,7 @@ etl::expected<void, LifecycleError> FrameBroker::Initialize() {
         active_thread_stack_storage_ =
             etl::span<uint8_t>(config_.thread_stack_storage.data(), config_.thread_stack_size_bytes);
     } else {
-        if (!MESSAGE_THREAD_STACK_MEMORY_CONFIGURABLE) {
+        if (!MESSAGE_ALLOW_HEAP_ALLOCATION_AT_INIT) {
             state_.store(LifecycleState::Configured, std::memory_order_release);
             return etl::unexpected(LifecycleError(LifecycleErrorType::InvalidState));
         }

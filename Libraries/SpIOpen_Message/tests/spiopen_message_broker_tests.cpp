@@ -112,7 +112,7 @@ TEST(SpIOpen_Message_FrameBroker, ConfigureRejectsInvalidArgs) {
 }
 
 TEST(SpIOpen_Message_FrameBroker, ConfigureRequiresExternalStackWhenNotConfigurable) {
-    if constexpr (!MESSAGE_THREAD_STACK_MEMORY_CONFIGURABLE) {
+    if constexpr (!MESSAGE_ALLOW_HEAP_ALLOCATION_AT_INIT) {
         BrokerHarness h;
         h.config.thread_stack_storage = etl::span<uint8_t>();
         auto ret = h.broker.Configure(h.config);
@@ -124,7 +124,7 @@ TEST(SpIOpen_Message_FrameBroker, ConfigureRequiresExternalStackWhenNotConfigura
 }
 
 TEST(SpIOpen_Message_FrameBroker, InitializeAllocatesStackWhenConfigurableAndMissingBuffer) {
-    if constexpr (MESSAGE_THREAD_STACK_MEMORY_CONFIGURABLE) {
+    if constexpr (MESSAGE_ALLOW_HEAP_ALLOCATION_AT_INIT) {
         BrokerHarness h;
         h.config.thread_stack_storage = etl::span<uint8_t>();
         ASSERT_TRUE(h.broker.Configure(h.config));

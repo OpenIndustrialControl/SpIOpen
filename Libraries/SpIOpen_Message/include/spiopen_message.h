@@ -16,6 +16,15 @@ SPDX-License-Identifier: Apache-2.0
 
 namespace spiopen::message {
 
+#ifdef CONFIG_SPIOPEN_MESSAGE_ALLOW_HEAP_ALLOCATION_AT_INIT
+static constexpr bool MESSAGE_ALLOW_HEAP_ALLOCATION_AT_INIT =
+    (CONFIG_SPIOPEN_MESSAGE_ALLOW_HEAP_ALLOCATION_AT_INIT != 0);
+#else
+// #NOTE: In host/unit-test builds where Kconfig values are not injected as compile definitions,
+// default to allowing init-time heap allocation to keep tests deterministic.
+static constexpr bool MESSAGE_ALLOW_HEAP_ALLOCATION_AT_INIT = true;
+#endif
+
 class FramePool;
 namespace publisher {
 struct FramePublisherHandle_t;

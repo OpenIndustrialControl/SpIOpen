@@ -25,7 +25,7 @@ Frame Allocator is a thin wrapper that combines all of the Frame Pools (one for 
 - All Queues are thread-safe and *may* be called from interrupts. Blocking Time can be specified when getting a new empty buffer from the queue, but an ISR must not block.
 - FrameMessages retain a pointer back to their owning FramePool so that they can re-enter the queue of available Messages once all of their references counters are gone.
 - Reference counting is accomplished with an atomic primitive just large enough to fit the maximum number of potential subscribers
-- When the SPIOPEN_MESSAGE_FRAME_POOL_SIZE_CONFIGURABLE setting is true, there is a more complex state machine within the Frame Pool to manage the lifecycle of the memory allocated for the frame buffers.
+- Whether backing memory may be allocated during `Initialize()` is controlled globally by `SPIOPEN_MESSAGE_ALLOW_HEAP_ALLOCATION_AT_INIT`; otherwise backing memory must be provided during `Configure()`.
 - Because FrameBuffers only have a non-owning pointer to their buffer memory (span) Frame Messages have an internal array that actually owns the memory within the Frame Buffer. This way, the FrameMessage itself has a data size that contains the control structure for the message as well as the Frame object and Buffer byte array.
 - The frame pool is just a state machine and a queue, so it does not need a thread to "run". The Frame Allocator also does not need a thread.
 - The frame allocator is responsible for aggregating not just the AllocateFrameMessage(length) call, but also aggregating the state transition calls (init, config, deinit) of each contained Frame Pool.
