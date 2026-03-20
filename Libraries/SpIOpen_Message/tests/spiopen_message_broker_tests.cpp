@@ -30,7 +30,7 @@ class FakeFramePool : public FramePool {
 
 constexpr size_t kInboxDepth = 8U;
 constexpr size_t kInboxStorageSize = kInboxDepth * sizeof(FrameMessage*);
-constexpr size_t kThreadStackBytes = MESSAGE_THREAD_MAX_STACK_SIZE;
+constexpr size_t kThreadStackBytes = MESSAGE_BROKER_THREAD_MAX_STACK_SIZE;
 
 struct BrokerHarness {
     std::array<uint8_t, kInboxStorageSize> inbox_storage{};
@@ -99,12 +99,12 @@ TEST(SpIOpen_Message_FrameBroker, ConfigureRejectsInvalidArgs) {
         BrokerHarness h;
         h.config.inbox_mailbox_config.depth = 0U;
         auto ret = h.broker.Configure(h.config);
-        EXPECT_FALSE(ret) << "Should reject zero inbox depth";
-        EXPECT_EQ(h.broker.GetState(), LifecycleState::Unconfigured);
+        EXPECT_TRUE(ret) << "Zero inbox depth should enable direct-publish mode";
+        EXPECT_EQ(h.broker.GetState(), LifecycleState::Configured);
     }
     {
         BrokerHarness h;
-        h.config.thread_stack_size_bytes = static_cast<uint32_t>(MESSAGE_THREAD_MAX_STACK_SIZE + 1U);
+        h.config.thread_stack_size_bytes = static_cast<uint32_t>(MESSAGE_BROKER_THREAD_MAX_STACK_SIZE + 1U);
         auto ret = h.broker.Configure(h.config);
         EXPECT_FALSE(ret) << "Should reject stack size above max";
         EXPECT_EQ(h.broker.GetState(), LifecycleState::Unconfigured);
@@ -230,8 +230,8 @@ TEST(SpIOpen_Message_FrameBroker, SubscribeTableFull) {
     ASSERT_TRUE(h.ConfigureAll());
     ASSERT_TRUE(h.broker.Initialize());
 
-    std::array<SubscriberHarness*, FRAME_BROKER_MAX_SUBSCRIBERS> subs{};
-    for (size_t i = 0U; i < FRAME_BROKER_MAX_SUBSCRIBERS; ++i) {
+    std::array<SubscriberHarness*, MESSAGE_BROKER_MAX_SUBSCRIBERS> subs{};
+    for (size_t i = 0U; i < MESSAGE_BROKER_MAX_SUBSCRIBERS; ++i) {
         subs[i] = new SubscriberHarness("sub", 0xFFFFU);
         ASSERT_TRUE(subs[i]->InitializeMailbox());
         auto ret = h.broker.Subscribe(&subs[i]->handle);
@@ -312,6 +312,52 @@ TEST(SpIOpen_Message_FrameBroker, PublishEnqueuesToInbox) {
     auto ret = h.broker.Publish(&message, 0U);
     ASSERT_TRUE(ret) << "Publish should succeed when broker is Active";
     EXPECT_EQ(message.GetReferenceCount(), 2U) << "Publish should acquire inbox reference";
+}
+
+TEST(SpIOpen_Message_FrameBroker, PublishDirectToSubscribersWhenInboxDepthZero) {
+    BrokerHarness h;
+    h.config.inbox_mailbox_config.depth = 0U;
+    h.config.inbox_mailbox_config.queue_storage = etl::span<uint8_t>();
+    ASSERT_TRUE(h.broker.Configure(h.config));
+    ASSERT_TRUE(h.broker.Initialize());
+
+    SubscriberHarness sub("sub1", static_cast<uint16_t>(MessageType::MasterToSlave));
+    ASSERT_TRUE(sub.InitializeMailbox());
+    ASSERT_TRUE(h.broker.Subscribe(&sub.handle));
+    ASSERT_TRUE(h.broker.Start());
+
+    FakeFramePool pool;
+    std::array<uint8_t, 64U> frame_storage{};
+    FrameMessage message(pool, etl::span<uint8_t>(frame_storage.data(), frame_storage.size()));
+    ASSERT_TRUE(message.AllocateToPublisher(MessageType::MasterToSlave, nullptr, 1U));
+    EXPECT_EQ(message.GetReferenceCount(), 1U);
+
+    auto ret = h.broker.Publish(&message, 0U);
+    ASSERT_TRUE(ret) << "Publish should fan out directly when inbox depth is zero";
+    EXPECT_EQ(message.GetReferenceCount(), 2U) << "Direct publish should only add subscriber mailbox references";
+
+    auto dequeue_ret = sub.mailbox.Dequeue(0U);
+    ASSERT_TRUE(dequeue_ret);
+    EXPECT_EQ(*dequeue_ret, &message);
+}
+
+TEST(SpIOpen_Message_FrameBroker, PublishDirectModeWithNoSubscribersKeepsPublisherReferenceOnly) {
+    BrokerHarness h;
+    h.config.inbox_mailbox_config.depth = 0U;
+    h.config.inbox_mailbox_config.queue_storage = etl::span<uint8_t>();
+    ASSERT_TRUE(h.broker.Configure(h.config));
+    ASSERT_TRUE(h.broker.Initialize());
+    ASSERT_TRUE(h.broker.Start());
+
+    FakeFramePool pool;
+    std::array<uint8_t, 64U> frame_storage{};
+    FrameMessage message(pool, etl::span<uint8_t>(frame_storage.data(), frame_storage.size()));
+    ASSERT_TRUE(message.AllocateToPublisher(MessageType::MasterToSlave, nullptr, 1U));
+    EXPECT_EQ(message.GetReferenceCount(), 1U);
+
+    auto ret = h.broker.Publish(&message, 0U);
+    ASSERT_TRUE(ret);
+    EXPECT_EQ(message.GetReferenceCount(), 1U) << "No inbox/subscriber enqueue should leave only publisher reference";
 }
 
 TEST(SpIOpen_Message_FrameBroker, UnconfigureClearsSubscribers) {

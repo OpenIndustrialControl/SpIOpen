@@ -37,10 +37,12 @@ etl::expected<void, LifecycleError> FrameBroker::Configure(const FrameBrokerConf
         return etl::unexpected(normalized_config_ret.error());
     }
     config_ = *normalized_config_ret;
-    auto mailbox_ret = inbox_mailbox_.Configure(config_.inbox_mailbox_config);
-    if (!mailbox_ret) {
-        state_.store(LifecycleState::Unconfigured, std::memory_order_release);
-        return etl::unexpected(LifecycleError(mailbox_ret.error().error));
+    if (!IsInboxMailboxDisabled()) {
+        auto mailbox_ret = inbox_mailbox_.Configure(config_.inbox_mailbox_config);
+        if (!mailbox_ret) {
+            state_.store(LifecycleState::Unconfigured, std::memory_order_release);
+            return etl::unexpected(LifecycleError(mailbox_ret.error().error));
+        }
     }
     state_.store(LifecycleState::Configured, std::memory_order_release);
     return {};
@@ -48,7 +50,8 @@ etl::expected<void, LifecycleError> FrameBroker::Configure(const FrameBrokerConf
 
 etl::expected<FrameBroker::ConfigType, FrameBroker::ErrorType> FrameBroker::ValidateAndNormalizeConfiguration(
     const ConfigType& config) {
-    if ((config.thread_stack_size_bytes == 0U) || (config.thread_stack_size_bytes > MESSAGE_THREAD_MAX_STACK_SIZE)) {
+    if ((config.thread_stack_size_bytes == 0U) ||
+        (config.thread_stack_size_bytes > MESSAGE_BROKER_THREAD_MAX_STACK_SIZE)) {
         return etl::unexpected(LifecycleError(LifecycleErrorType::InvalidConfiguration));
     }
     if (!config.thread_stack_storage.empty() && (config.thread_stack_storage.size() < config.thread_stack_size_bytes)) {
@@ -58,13 +61,14 @@ etl::expected<FrameBroker::ConfigType, FrameBroker::ErrorType> FrameBroker::Vali
         return etl::unexpected(LifecycleError(LifecycleErrorType::InvalidConfiguration));
     }
 
-    auto mailbox_config_ret = inbox_mailbox_.ValidateAndNormalizeConfiguration(config.inbox_mailbox_config);
-    if (!mailbox_config_ret) {
-        return etl::unexpected(LifecycleError(LifecycleErrorType::InvalidConfiguration));
-    }
-
     ConfigType normalized_config = config;
-    normalized_config.inbox_mailbox_config = *mailbox_config_ret;
+    if (config.inbox_mailbox_config.depth != 0U) {
+        auto mailbox_config_ret = inbox_mailbox_.ValidateAndNormalizeConfiguration(config.inbox_mailbox_config);
+        if (!mailbox_config_ret) {
+            return etl::unexpected(LifecycleError(LifecycleErrorType::InvalidConfiguration));
+        }
+        normalized_config.inbox_mailbox_config = *mailbox_config_ret;
+    }
     return normalized_config;
 }
 
@@ -91,15 +95,17 @@ etl::expected<void, LifecycleError> FrameBroker::Initialize() {
         active_thread_stack_storage_ = etl::span<uint8_t>(owned_thread_stack_memory_, config_.thread_stack_size_bytes);
     }
 
-    auto mailbox_ret = inbox_mailbox_.Initialize();
-    if (!mailbox_ret) {
-        if (owned_thread_stack_memory_ != nullptr) {
-            std::free(owned_thread_stack_memory_);
-            owned_thread_stack_memory_ = nullptr;
+    if (!IsInboxMailboxDisabled()) {
+        auto mailbox_ret = inbox_mailbox_.Initialize();
+        if (!mailbox_ret) {
+            if (owned_thread_stack_memory_ != nullptr) {
+                std::free(owned_thread_stack_memory_);
+                owned_thread_stack_memory_ = nullptr;
+            }
+            active_thread_stack_storage_ = etl::span<uint8_t>();
+            state_.store(LifecycleState::Configured, std::memory_order_release);
+            return etl::unexpected(LifecycleError(mailbox_ret.error().error));
         }
-        active_thread_stack_storage_ = etl::span<uint8_t>();
-        state_.store(LifecycleState::Configured, std::memory_order_release);
-        return etl::unexpected(LifecycleError(mailbox_ret.error().error));
     }
 
     state_.store(LifecycleState::Inactive, std::memory_order_release);
@@ -113,26 +119,28 @@ etl::expected<void, LifecycleError> FrameBroker::Start() {
     }
     state_.store(LifecycleState::Starting, std::memory_order_release);
 
-    auto mailbox_ret = inbox_mailbox_.Start();
-    if (!mailbox_ret) {
-        state_.store(LifecycleState::Inactive, std::memory_order_release);
-        return etl::unexpected(LifecycleError(mailbox_ret.error().error));
-    }
-    // new thread is created in Start() not Initialzie() because CMSIS does not allow you to create a suspended thread,
-    // and the resources for the thread are all already created by initialize()
-    osThreadAttr_t thread_attr = {};
-    thread_attr.name = config_.thread_name;
-    thread_attr.priority = static_cast<osPriority_t>(config_.thread_priority);
-    thread_attr.cb_mem = thread_control_block_storage_.data();
-    thread_attr.cb_size = static_cast<uint32_t>(thread_control_block_storage_.size());
-    thread_attr.stack_mem = active_thread_stack_storage_.data();
-    thread_attr.stack_size = config_.thread_stack_size_bytes;
+    if (!IsInboxMailboxDisabled()) {
+        auto mailbox_ret = inbox_mailbox_.Start();
+        if (!mailbox_ret) {
+            state_.store(LifecycleState::Inactive, std::memory_order_release);
+            return etl::unexpected(LifecycleError(mailbox_ret.error().error));
+        }
+        // new thread is created in Start() not Initialzie() because CMSIS does not allow you to create a suspended
+        // thread, and the resources for the thread are all already created by initialize()
+        osThreadAttr_t thread_attr = {};
+        thread_attr.name = config_.thread_name;
+        thread_attr.priority = static_cast<osPriority_t>(config_.thread_priority);
+        thread_attr.cb_mem = thread_control_block_storage_.data();
+        thread_attr.cb_size = static_cast<uint32_t>(thread_control_block_storage_.size());
+        thread_attr.stack_mem = active_thread_stack_storage_.data();
+        thread_attr.stack_size = config_.thread_stack_size_bytes;
 
-    thread_id_ = osThreadNew(ThreadEntry, this, &thread_attr);
-    if (thread_id_ == nullptr) {
-        inbox_mailbox_.Stop();
-        state_.store(LifecycleState::Inactive, std::memory_order_release);
-        return etl::unexpected(LifecycleError(LifecycleErrorType::ResourceFailure));
+        thread_id_ = osThreadNew(ThreadEntry, this, &thread_attr);
+        if (thread_id_ == nullptr) {
+            inbox_mailbox_.Stop();
+            state_.store(LifecycleState::Inactive, std::memory_order_release);
+            return etl::unexpected(LifecycleError(LifecycleErrorType::ResourceFailure));
+        }
     }
 
     state_.store(LifecycleState::Active, std::memory_order_release);
@@ -151,8 +159,10 @@ etl::expected<void, LifecycleError> FrameBroker::Stop() {
         thread_id_ = nullptr;
     }
 
-    inbox_mailbox_.Stop();
-    inbox_mailbox_.DrainAndReleaseAll();
+    if (!IsInboxMailboxDisabled()) {
+        inbox_mailbox_.Stop();
+        inbox_mailbox_.DrainAndReleaseAll();
+    }
 
     state_.store(LifecycleState::Inactive, std::memory_order_release);
     return {};
@@ -165,10 +175,12 @@ etl::expected<void, LifecycleError> FrameBroker::Deinitialize() {
     }
     state_.store(LifecycleState::Deinitializing, std::memory_order_release);
 
-    auto mailbox_ret = inbox_mailbox_.Deinitialize();
-    if (!mailbox_ret) {
-        state_.store(LifecycleState::Inactive, std::memory_order_release);
-        return etl::unexpected(LifecycleError(mailbox_ret.error().error));
+    if (!IsInboxMailboxDisabled()) {
+        auto mailbox_ret = inbox_mailbox_.Deinitialize();
+        if (!mailbox_ret) {
+            state_.store(LifecycleState::Inactive, std::memory_order_release);
+            return etl::unexpected(LifecycleError(mailbox_ret.error().error));
+        }
     }
 
     if (owned_thread_stack_memory_ != nullptr) {
@@ -190,10 +202,12 @@ etl::expected<void, LifecycleError> FrameBroker::Unconfigure() {
     }
     state_.store(LifecycleState::Unconfiguring, std::memory_order_release);
 
-    auto mailbox_unconfigure_ret = inbox_mailbox_.Unconfigure();
-    if (!mailbox_unconfigure_ret) {
-        state_.store(LifecycleState::Configured, std::memory_order_release);
-        return etl::unexpected(LifecycleError(mailbox_unconfigure_ret.error().error));
+    if (!IsInboxMailboxDisabled()) {
+        auto mailbox_unconfigure_ret = inbox_mailbox_.Unconfigure();
+        if (!mailbox_unconfigure_ret) {
+            state_.store(LifecycleState::Configured, std::memory_order_release);
+            return etl::unexpected(LifecycleError(mailbox_unconfigure_ret.error().error));
+        }
     }
     subscribers_.fill(nullptr);
     enqueue_error_count_.store(0U, std::memory_order_relaxed);
@@ -257,6 +271,10 @@ etl::expected<void, FrameBrokerError> FrameBroker::Publish(FrameMessage* message
         return etl::unexpected(FrameBrokerError::InvalidArgument);
     }
 
+    if (IsInboxMailboxDisabled()) {
+        return FanOutToSubscribers(message);
+    }
+
     auto enqueue_ret = inbox_mailbox_.Enqueue(message, timeout_ticks);
     if (!enqueue_ret) {
         return etl::unexpected(FrameBrokerError::PublishFailed);
@@ -286,6 +304,8 @@ void FrameBroker::RunLoop() {
         message->Release();
     }
 }
+
+bool FrameBroker::IsInboxMailboxDisabled() const { return config_.inbox_mailbox_config.depth == 0U; }
 
 etl::expected<void, FrameBrokerError> FrameBroker::FanOutToSubscribers(FrameMessage* message) {
     if (message == nullptr) {

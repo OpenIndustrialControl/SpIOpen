@@ -42,6 +42,8 @@ enum class FrameBrokerError : uint8_t {
  *
  * The broker always creates and owns its inbox mailbox internally; inbox_mailbox_config
  * specifies depth and optional backing memory (static vs dynamic allocation) for that mailbox.
+ * A depth of 0 enables direct-publish mode: no inbox mailbox or broker routing thread is created,
+ * and Publish() directly fans out to subscribers on the caller thread.
  * Thread stack memory may be supplied via thread_stack_storage or allocated during
  * Initialize() when MESSAGE_ALLOW_HEAP_ALLOCATION_AT_INIT is enabled.
  */
@@ -53,17 +55,17 @@ struct FrameBrokerConfig {
     FrameMailboxConfig inbox_mailbox_config; /**< Config for the internally owned inbox mailbox */
 };
 
-#ifdef CONFIG_SPIOPEN_MESSAGE_MAX_SUBSCRIBER_COUNT
-static constexpr size_t FRAME_BROKER_MAX_SUBSCRIBERS = CONFIG_SPIOPEN_MESSAGE_MAX_SUBSCRIBER_COUNT;
+#ifdef CONFIG_SPIOPEN_MESSAGE_BROKER_MAX_SUBSCRIBER_COUNT
+static constexpr size_t MESSAGE_BROKER_MAX_SUBSCRIBERS = CONFIG_SPIOPEN_MESSAGE_BROKER_MAX_SUBSCRIBER_COUNT;
 #else
 // #TODO: Confirm fallback subscriber table size when KConfig is unavailable.
-static constexpr size_t FRAME_BROKER_MAX_SUBSCRIBERS = 8U;
+static constexpr size_t MESSAGE_BROKER_MAX_SUBSCRIBERS = 8U;
 #endif
 
-#ifdef CONFIG_SPIOPEN_MESSAGE_THREAD_MAX_STACK_SIZE
-static constexpr size_t MESSAGE_THREAD_MAX_STACK_SIZE = CONFIG_SPIOPEN_MESSAGE_THREAD_MAX_STACK_SIZE;
+#ifdef CONFIG_SPIOPEN_MESSAGE_BROKER_THREAD_MAX_STACK_SIZE
+static constexpr size_t MESSAGE_BROKER_THREAD_MAX_STACK_SIZE = CONFIG_SPIOPEN_MESSAGE_BROKER_THREAD_MAX_STACK_SIZE;
 #else
-static constexpr size_t MESSAGE_THREAD_MAX_STACK_SIZE = 2048U;
+static constexpr size_t MESSAGE_BROKER_THREAD_MAX_STACK_SIZE = 2048U;
 #endif
 
 /**
@@ -144,10 +146,11 @@ class FrameBroker : public ILifecycleComponent<FrameBrokerConfig, LifecycleError
     etl::expected<void, FrameBrokerError> Unsubscribe(const subscriber::FrameSubscriberHandle_t* subscriber_handle);
 
     /**
-     * @brief Publishes a frame message into broker inbound mailbox.
+     * @brief Publishes a frame message through the broker.
      * @param message Message allocated by FramePool and initialized by publisher
-     * @param timeout_ticks RTOS ticks to wait for mailbox enqueue (0 for non-blocking)
-     * @return Success on enqueue, error on invalid state/queue failure
+     * @param timeout_ticks RTOS ticks to wait for inbox enqueue (0 for non-blocking).
+     *        Ignored when inbox depth is 0 (direct-publish mode).
+     * @return Success on publish fan-out, error on invalid state/queue failure
      */
     etl::expected<void, FrameBrokerError> Publish(FrameMessage* message, uint32_t timeout_ticks = 0U);
 
@@ -176,6 +179,8 @@ class FrameBroker : public ILifecycleComponent<FrameBrokerConfig, LifecycleError
     static void ThreadEntry(void* context);
     /// Single iteration of the broker loop: dequeue one message from the inbox and fan out to subscribers.
     void RunLoop();
+    /// True when inbox mailbox is intentionally disabled and publish calls fan out directly.
+    bool IsInboxMailboxDisabled() const;
 
     // For each subscriber, check if they want the message. If they do, enqueue it to their mailbox (which should
     // increment the reference count automatically). On subscriber enqueue failure, increment the per-subscriber error
@@ -190,7 +195,7 @@ class FrameBroker : public ILifecycleComponent<FrameBrokerConfig, LifecycleError
     uint8_t* owned_thread_stack_memory_;
     FrameMailbox inbox_mailbox_;
 
-    std::array<subscriber::FrameSubscriberHandle_t*, FRAME_BROKER_MAX_SUBSCRIBERS> subscribers_;
+    std::array<subscriber::FrameSubscriberHandle_t*, MESSAGE_BROKER_MAX_SUBSCRIBERS> subscribers_;
     std::atomic<uint32_t> enqueue_error_count_;
 };
 

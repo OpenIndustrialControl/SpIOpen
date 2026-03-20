@@ -205,4 +205,72 @@ class FrameMailbox : public ILifecycleComponent<FrameMailboxConfig, LifecycleErr
     osMessageQueueId_t queue_handle_;
 };
 
+/**
+ * @brief Fixed-depth mailbox wrapper with internal static queue storage.
+ *
+ * This helper composes @ref FrameMailbox and feeds a static queue-storage buffer
+ * through the same Configure()/ValidateAndNormalizeConfiguration() pipeline used
+ * by dynamic configurations.
+ *
+ * @tparam kDepth Queue depth in message-pointer slots
+ */
+struct StaticFrameMailboxConfig {
+    const char* name = nullptr; /**< Optional queue name for diagnostics; nullptr uses mailbox default */
+};
+
+template <size_t kDepth>
+class StaticFrameMailbox final : public ILifecycleComponent<StaticFrameMailboxConfig, LifecycleError> {
+   public:
+    static_assert(kDepth > 0U, "StaticFrameMailbox depth must be greater than zero");
+    static_assert(kDepth <= MESSAGE_MAILBOX_MAX_DEPTH, "StaticFrameMailbox depth exceeds MESSAGE_MAILBOX_MAX_DEPTH");
+
+    static constexpr size_t kQueueStorageBytes = kDepth * sizeof(FrameMessage*);
+
+    StaticFrameMailbox() : queue_storage_(), mailbox_() {}
+    ~StaticFrameMailbox() = default;
+
+    /**
+     * @brief Configure with compile-time depth and internal static storage.
+     * @param config Wrapper config (name-only)
+     */
+    etl::expected<void, LifecycleError> Configure(const ConfigType& config) override {
+        auto normalized = ValidateAndNormalizeConfiguration(config);
+        if (!normalized) {
+            return etl::unexpected(normalized.error());
+        }
+        return mailbox_.Configure(FrameMailboxConfig{
+            kDepth, etl::span<uint8_t>(queue_storage_.data(), queue_storage_.size()), normalized->name});
+    }
+
+    etl::expected<ConfigType, ErrorType> ValidateAndNormalizeConfiguration(const ConfigType& config) override {
+        return config;
+    }
+
+    etl::expected<void, LifecycleError> Initialize() override { return mailbox_.Initialize(); }
+    etl::expected<void, LifecycleError> Start() override { return mailbox_.Start(); }
+    etl::expected<void, LifecycleError> Stop() override { return mailbox_.Stop(); }
+    etl::expected<void, LifecycleError> Deinitialize() override { return mailbox_.Deinitialize(); }
+    etl::expected<void, LifecycleError> Unconfigure() override { return mailbox_.Unconfigure(); }
+
+    etl::expected<size_t, FrameMailboxError> DrainAndReleaseAll() { return mailbox_.DrainAndReleaseAll(); }
+    etl::expected<void, FrameMailboxError> Enqueue(FrameMessage* message, uint32_t timeout_ticks = 0U) {
+        return mailbox_.Enqueue(message, timeout_ticks);
+    }
+    etl::expected<FrameMessage*, FrameMailboxError> Dequeue(uint32_t timeout_ticks = osWaitForever) {
+        return mailbox_.Dequeue(timeout_ticks);
+    }
+
+    LifecycleState GetState() const override { return mailbox_.GetState(); }
+
+    /**
+     * @brief Access underlying composed mailbox for APIs that require FrameMailbox.
+     */
+    FrameMailbox& GetMailbox() { return mailbox_; }
+    const FrameMailbox& GetMailbox() const { return mailbox_; }
+
+   private:
+    std::array<uint8_t, kQueueStorageBytes> queue_storage_;
+    FrameMailbox mailbox_;
+};
+
 }  // namespace spiopen::message

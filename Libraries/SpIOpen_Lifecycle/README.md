@@ -103,13 +103,4 @@ stateDiagram-v2
 
 ## Configuration
 
-### KConfig
-
-Use KConfig to control lifecycle library feature toggles.
-
-- `SPIOPEN_LIFECYCLE_ENABLE_AGGREGATE_COMPONENTS` enables aggregate lifecycle helper interfaces.
-
-## Notes for Message / broker integrators
-
-Frame broker and pool lifecycle details live in the SpIOpen Message library docs (see that library’s `README.md` and design notes).
-
+This library currently has no KConfig feature toggles.

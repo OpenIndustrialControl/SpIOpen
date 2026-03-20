@@ -35,18 +35,46 @@ This interface provides functions for task scheduling, queues, symaphores,and po
 ### KConfig
 
 Use KConfig to enable/disable features of the library.
+Global:
+- SPIOPEN_MESSAGE_ALLOW_HEAP_ALLOCATION_AT_INIT : If true, components may allocate missing backing memory in `Initialize()`. If false, all backing memory must be supplied via configuration before initialization.
+
+Mailbox:
+- SPIOPEN_MESSAGE_MAILBOX_MAX_DEPTH : The maximum number of messages that can be held in *any* mailbox.
 
 Broker:
-- SPIOPEN_MESSAGE_MAX_SUBSCRIBER_COUNT : The maximum number of frame subscribers the broker can keep track of.
+- SPIOPEN_MESSAGE_BROKER_MAX_SUBSCRIBER_COUNT : The maximum number of frame subscribers the broker can keep track of.
+- SPIOPEN_MESSAGE_BROKER_THREAD_MAX_STACK_SIZE : Maximum memory allocated to the Broker thread.
 
 Frame Pool:
-- SPIOPEN_MESSAGE_ALLOW_HEAP_ALLOCATION_AT_INIT : If true, components may allocate missing backing memory in `Initialize()`. If false, all backing memory must be supplied via configuration before initialization.
 - SPIOPEN_MESSAGE_FRAME_POOL_MAX_CC_FRAMES : Maximum number of CAN-CC sized frames that can be initialized in the memory pool.
 - SPIOPEN_MESSAGE_FRAME_POOL_MAX_FD_FRAMES : Maximum number of CAN-FD sized frames that can be initialized in the memory pool.
 - SPIOPEN_MESSAGE_FRAME_POOL_MAX_XL_FRAMES : Maximum number of CAN-XL sized frames that can be initialized in the memory pool. Zero to disable CAN-XL.
-- SPIOPEN_MESSAGE_MAX_SUBSCRIBER_COUNT : Maximum number of subscribers that the router can route to at once
 
 ## Usage
+
+### Publishers
+
+Publishers start by requesting one or more free and available `FrameMessage`s from the `FramePool` (potentially from an ISR) by specifying a `MessageType`. After populating the internal `FrameBuffer` with data, they must ensure that the internal Frame object and internal memory buffer are both valid and synchronized (perhaps due to a TTL decrement).
+
+The publisher then enqueues the FrameMessage into the broker's inbox. This can potentially happen from an ISR.
+If the broker inbox mailbox depth is configured to 0, the broker runs in direct-publish mode and `Publish()` bypasses
+the broker inbox queue, immediately fanning out to subscribers on the publishing thread.
+
+Finally the publisher "releases" the Message, which decrements its reference count by one and potentially frees the FrameBuffer back to the pool.
+
+### Distribution Rules
+
+When the broker receives a message it walks through every registered subscriber and enqueues the reference-counted message in each subscrib'ers mailbox (which automatically increments the counter each time on success) for each subscriber that is configured to receive that MessageType. Then the broker releases its own reference on the message, decrementing it by one and potentially releasing the frame buffer back to the pool.
+
+### Subscribers
+
+Subscribers must register with the broker to receive FrameMessages. They submit to the broker's registration function a reference to their subscriber structure which includes their own queue ("mailbox") and things like a bitmask that describes what Message Types they want to receive and a "name" string for debug. Subscribers should have their own task that blocks on their queue so they can process messages immediately.
+
+Subscribers must not modify the Frame or Buffer within the Frame Buffer, or else other subscribers will be affected. 
+
+When subscribers are done processing a Reference Counted Message they *must* call the release function on the message to decrement the counter. When it decrements to zero, that same function will know to submit it back to the Frame Pool (even if it happens in an ISR).
+
+## Implementation
 
 ### Lifecycle Integration
 
@@ -57,24 +85,7 @@ Message classes consume lifecycle interfaces from the `SpIOpen_Lifecycle` librar
 - Lifecycle transitions should be invoked in order: `Configure -> Initialize -> Start`, and unwound in reverse: `Stop -> Deinitialize`.
 - Broker-specific lifecycle behavior is documented in `FrameBroker.md` and `FramePool.md`, while shared lifecycle semantics are documented in `SpIOpen_Lifecycle/README.md`.
 
-### Publishers
+### Potential Future Changes
 
-Publishers start by requesting one or more free and available FrameBuffers from the FramePool that lives within the broker (potentially from an ISR). They must ensure that the internal Frame object and internal memory buffer are both valid and synchronized (perhaps due to a TTL decrement).
-
-To send a frame through the broker it must be combined with a MessageType to form a FrameMessage. The MessageType often just describes the source (MOSI Dropbus, MISO Chain Downstream, CanOpenNode, etc). Some message types are preconfigured or reserved, others can be freely used in derivative software.
-
-The publisher then enqueues the FrameMessage into the broker's inbox. This can potentially happen from an ISR.
-
-Finally the publisher "releases" the Message, which decrements its reference count by one and potentially frees the FrameBuffer back to the pool.
-
-### Distribution Rules
-
-When the broker receives a message it walks through every registered subscriber and enqueues the reference-counted message (incrementing the counter each time on success) for each subscriber that is configured to receive that MessageType. Then the broker releases its own reference on the message, decrementing it by one and potentially releasing the frame buffer back to the pool.
-
-### Subscribers
-
-Subscribers must register with the broker to receive FrameMessages. They submit to the broker's registration function a reference to their subscriber structure which includes their own queue ("mailbox") and things like a bitmask that describes what Message Types they want to receive and a "name" string for debug. Subscribers should have their own task that blocks on their queue so they can process messages immediately.
-
-Subscribers must not modify the Frame or Buffer within the Frame Buffer, or else other subscribers will be affected. 
-
-When subscribers are done processing a Reference Counted Message they *must* call the release function on the message to decrement the counter. When it decrements to zero, that same function will know to submit it back to the Frame Pool (even if it happens in an ISR).
+- Make the entire message system (pool, mailbox, broker, message) more generic by turning the FrameMessage into an "Envelope" that contains a template-based payload datatype
+- Allow subscribers to add/remove themselves from the broker while it is running (might require a semmaphore)
