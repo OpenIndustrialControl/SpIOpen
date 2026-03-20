@@ -131,24 +131,6 @@ EXPECT_EQ(payload_len, 3U) << "payload_len should be 3 for DLC=3";
     }
 }
 
-#ifndef CONFIG_SPIOPEN_FRAME_CAN_FD_ENABLE
-{
-    const uint16_t encoded = EncodeFormatHeader11(0, false, true, false, false, false);
-    uint8_t buffer[4] = {0};
-    buffer[0] = static_cast<uint8_t>(encoded >> 8U);
-    buffer[1] = static_cast<uint8_t>(encoded & 0xFFU);
-    etl::byte_stream_reader stream(buffer, sizeof(buffer), etl::endian::big);
-    Frame frame{};
-    bool dlc_corrected = false;
-    size_t payload_len = 0;
-    auto ret = ReadFormatHeader(stream, frame, dlc_corrected, payload_len);
-    EXPECT_FALSE(ret) << "ReadFormatHeader should fail when FD not enabled and header has FDF set";
-    if (!ret) {
-        EXPECT_EQ(ret.error(), FrameParseError::CanFdNotSupported) << "error should be CanFdNotSupported";
-    }
-}
-#endif
-
 #ifndef CONFIG_SPIOPEN_FRAME_CAN_XL_ENABLE
 {
     const uint16_t encoded = EncodeFormatHeader11(0, false, false, true, false, false);

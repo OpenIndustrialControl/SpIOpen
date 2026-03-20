@@ -42,7 +42,7 @@ Broker:
 Frame Pool:
 - SPIOPEN_MESSAGE_FRAME_POOL_SIZE_CONFIGURABLE : If true, the frame pool memory is initialized from the heap based on a configuration (and may fail). If false, the available frame pool memory is fixed at compile time (defined by the *_MAX_XX_FRAMES constants).
 - SPIOPEN_MESSAGE_FRAME_POOL_MAX_CC_FRAMES : Maximum number of CAN-CC sized frames that can be initialized in the memory pool.
-- SPIOPEN_MESSAGE_FRAME_POOL_MAX_FD_FRAMES : Maximum number of CAN-FD sized frames that can be initialized in the memory pool. Zero to disable CAN-FD.
+- SPIOPEN_MESSAGE_FRAME_POOL_MAX_FD_FRAMES : Maximum number of CAN-FD sized frames that can be initialized in the memory pool.
 - SPIOPEN_MESSAGE_FRAME_POOL_MAX_XL_FRAMES : Maximum number of CAN-XL sized frames that can be initialized in the memory pool. Zero to disable CAN-XL.
 - SPIOPEN_MESSAGE_MAX_SUBSCRIBER_COUNT : Maximum number of subscribers that the router can route to at once
 

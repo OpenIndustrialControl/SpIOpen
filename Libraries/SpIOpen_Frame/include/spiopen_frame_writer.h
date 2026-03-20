@@ -24,8 +24,7 @@ enum class FrameWriteError : uint8_t {
     BufferTooShort,            // The buffer is too short to write the frame
     InvalidBufferPointer,      // The buffer pointer is invalid or NULL
     InvalidFramePointer,       // The frame pointer is invalid or NULL
-    CanFdNotSupported,         // CAN-FD not supported by the frame pool
-    CanXlNotSupported,         // CAN-XL not supported by the frame pool
+    CanXlNotSupported,         // CAN-XL not supported by this build
 };
 
 /**

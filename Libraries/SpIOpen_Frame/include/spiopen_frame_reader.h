@@ -24,8 +24,7 @@ enum class FrameParseError : uint8_t {
     BufferTooShortToDetermineLength,  // Buffer is too short to determine frame length from partial header
     BufferTooShortForHeader,          // Buffer is too short for the header
     FormatDlcCorrupted,               // DLC field was corrupted during parsing (due to multiple bit flips)
-    CanFdNotSupported,                // CAN-FD not supported by the frame pool
-    CanXlNotSupported,                // CAN-XL not supported by the frame pool
+    CanXlNotSupported,                // CAN-XL not supported by this build
     BufferTooShortForPayload,         // Buffer is too short for the payload
     CrcMismatch,                      // CRC mismatch between calculated and stored CRCs
     DlcInvalid,                       // DLC field was successfully decoded but indicates an invalid (too large) value

@@ -41,12 +41,6 @@ static constexpr bool MESSAGE_FRAME_POOL_SIZE_CONFIGURABLE = true;
 static constexpr bool MESSAGE_FRAME_POOL_SIZE_CONFIGURABLE = false;
 #endif
 
-#ifdef CONFIG_SPIOPEN_FRAME_CAN_FD_ENABLE
-static constexpr bool MESSAGE_CAN_FD_ENABLED = true;
-#else
-static constexpr bool MESSAGE_CAN_FD_ENABLED = false;
-#endif
-
 #ifdef CONFIG_SPIOPEN_FRAME_CAN_XL_ENABLE
 static constexpr bool MESSAGE_CAN_XL_ENABLED = true;
 #else

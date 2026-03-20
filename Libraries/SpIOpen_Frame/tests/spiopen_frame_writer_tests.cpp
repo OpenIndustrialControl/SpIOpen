@@ -72,27 +72,9 @@ TEST(SpIOpen_FrameWriter, ValidateFrame) {
         }
     }
 
-    // --- InvalidPayloadLength: FD not enabled but frame has FDF set (TryGetPayloadSectionLength fails) ---
-#ifndef CONFIG_SPIOPEN_FRAME_CAN_FD_ENABLE
-    {
-        uint8_t payload_storage[8] = {0};
-        Frame frame{};
-        frame.can_flags = {};
-        frame.can_flags.FDF = 1;
-        frame.payload = etl::span<uint8_t>(payload_storage, 8);
-        uint8_t buffer[format::MAX_CAN_CC_FRAME_SIZE] = {0};
-        etl::byte_stream_writer stream(etl::span<uint8_t>(buffer, sizeof(buffer)), etl::endian::big);
-        auto ret = ValidateFrame(stream, frame);
-        EXPECT_FALSE(ret) << "ValidateFrame should fail when FD not supported and frame has FDF set";
-        if (!ret) {
-            EXPECT_EQ(ret.error(), FrameWriteError::InvalidPayloadLength);
-        }
-    }
-#endif
-
     // --- CanXlNotSupported: XL not enabled but frame has XLF set (when FD is enabled, TryGetPayloadSectionLength can
     // succeed for XL) ---
-#if defined(CONFIG_SPIOPEN_FRAME_CAN_FD_ENABLE) && !defined(CONFIG_SPIOPEN_FRAME_CAN_XL_ENABLE)
+#ifndef CONFIG_SPIOPEN_FRAME_CAN_XL_ENABLE
     {
         uint8_t payload_storage[9] = {0};
         Frame frame{};
@@ -110,7 +92,6 @@ TEST(SpIOpen_FrameWriter, ValidateFrame) {
     }
 #endif
 
-#ifdef CONFIG_SPIOPEN_FRAME_CAN_FD_ENABLE
     // --- InvalidPayloadLength: FD frame with payload > 64 bytes ---
     {
         uint8_t payload_storage[65] = {0};
@@ -126,7 +107,6 @@ TEST(SpIOpen_FrameWriter, ValidateFrame) {
             EXPECT_EQ(ret.error(), FrameWriteError::InvalidPayloadLength);
         }
     }
-#endif
 
 #ifdef CONFIG_SPIOPEN_FRAME_CAN_XL_ENABLE
     // --- InvalidPayloadLength: XL frame with payload > 2048 bytes ---
@@ -549,7 +529,6 @@ TEST(SpIOpen_FrameWriter, WriteCrc) {
         EXPECT_EQ(stream.size_bytes(), PREAMBLE_SIZE + 3U + SHORT_CRC_SIZE);
     }
 
-#ifdef CONFIG_SPIOPEN_FRAME_CAN_FD_ENABLE
     {
         uint8_t payload_storage[9] = {0};
         uint8_t buffer[16] = {0};
@@ -566,7 +545,6 @@ TEST(SpIOpen_FrameWriter, WriteCrc) {
         ASSERT_TRUE(ret) << "WriteCrc should succeed for CRC32";
         EXPECT_EQ(stream.size_bytes(), PREAMBLE_SIZE + 9U + LONG_CRC_SIZE);
     }
-#endif
 
     {
         uint8_t payload_storage[1] = {0};

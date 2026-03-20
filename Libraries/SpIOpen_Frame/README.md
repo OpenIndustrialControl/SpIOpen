@@ -27,7 +27,6 @@ The format of the SpIOpen frame is defined in [FrameFormat.md](FrameFormat.md).
 ### KConfig
 
 Use KConfig to enable/disable features of the library.
-- SPIOPEN_FRAME_CAN_FD_ENABLE enables 64 byte messages (up from a max of 8) and allows tunneling of FD frames.
 - SPIOPEN_FRAME_CAN_XL_ENABLE enables 2048 byte messages (up from a max of 64) and allows tunneling of XL frames. Also includes the XL control structure.
 
 ### Algorithms

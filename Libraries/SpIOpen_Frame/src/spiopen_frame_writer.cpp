@@ -42,15 +42,9 @@ etl::expected<void, FrameWriteError> ValidateFrame(etl::byte_stream_writer& stre
     if (!xlf && !fdf && payload_len > MAX_CC_PAYLOAD_SIZE) {
         return etl::unexpected(FrameWriteError::InvalidPayloadLength);
     }
-#ifdef CONFIG_SPIOPEN_FRAME_CAN_FD_ENABLE
     if (!xlf && fdf && payload_len > MAX_FD_PAYLOAD_SIZE) {
         return etl::unexpected(FrameWriteError::InvalidPayloadLength);
     }
-#else
-    if (fdf) {
-        return etl::unexpected(FrameWriteError::CanFdNotSupported);
-    }
-#endif
 #ifdef CONFIG_SPIOPEN_FRAME_CAN_XL_ENABLE
     if (xlf && payload_len > MAX_XL_PAYLOAD_SIZE) {
         return etl::unexpected(FrameWriteError::InvalidPayloadLength);

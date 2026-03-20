@@ -72,11 +72,9 @@ TEST(SpIOpen_Frame, HeaderLength) {
     frame.can_flags.TTL = true;
     EXPECT_EQ(frame.GetHeaderLength(), 5U) << "Frame with TTL flag";
 
-#ifdef CONFIG_SPIOPEN_FRAME_CAN_FD_ENABLE
     frame.Reset();
     frame.can_flags.FDF = true;
     EXPECT_EQ(frame.GetHeaderLength(), 4U) << "Frame with FDF flag";
-#endif
 
 #ifdef CONFIG_SPIOPEN_FRAME_CAN_XL_ENABLE
     frame.Reset();
@@ -104,7 +102,6 @@ TEST(SpIOpen_Frame, FrameLength) {
     frame.payload = etl::span<uint8_t>(frame_data, 9);
     EXPECT_FALSE(frame.TryGetFrameLength(frame_length)) << "Frame with 9B payload in CC mode";
 
-#ifdef CONFIG_SPIOPEN_FRAME_CAN_FD_ENABLE
     frame.Reset();
     frame.payload = etl::span<uint8_t>(frame_data, 8);
     frame.can_flags.FDF = true;
@@ -121,7 +118,6 @@ TEST(SpIOpen_Frame, FrameLength) {
     EXPECT_EQ(frame_length, 74U) << "Frame with 64B payload and FDF flag";
     frame.payload = etl::span<uint8_t>(frame_data, 65);
     EXPECT_FALSE(frame.TryGetFrameLength(frame_length)) << "Frame with 65B payload and FDF flag";
-#endif
 
 #ifdef CONFIG_SPIOPEN_FRAME_CAN_XL_ENABLE
     frame.Reset();

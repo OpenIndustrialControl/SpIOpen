@@ -102,25 +102,17 @@ class Frame final {
 
         // XL
         if (can_flags.XLF) {
-#ifdef CONFIG_SPIOPEN_FRAME_CAN_FD_ENABLE
             payload_length_out = payload.size();
             return payload_length_out <= format::MAX_XL_PAYLOAD_SIZE;
-#else
-            return false;
-#endif
         }
 
-// FD
-#ifdef CONFIG_SPIOPEN_FRAME_CAN_FD_ENABLE
+        // FD
         uint8_t dlc = 0;
         if (!format::TryGetDlcFromPayloadLength(payload.size(), dlc)) {
             return false;
         }
         payload_length_out = format::CAN_FD_PAYLOAD_BY_DLC[dlc & format::HEADER_DLC_MASK];
         return true;
-#else
-        return false;
-#endif
     }
 
     /**

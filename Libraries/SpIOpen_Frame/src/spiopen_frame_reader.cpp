@@ -73,11 +73,6 @@ etl::expected<void, FrameParseError> ReadFormatHeader(etl::byte_stream_reader& s
         return parse_result;
     }
 
-#ifndef CONFIG_SPIOPEN_FRAME_CAN_FD_ENABLE
-    if (out_frame.can_flags.FDF) {
-        return etl::unexpected(FrameParseError::CanFdNotSupported);
-    }
-#endif
 #ifndef CONFIG_SPIOPEN_FRAME_CAN_XL_ENABLE
     if (out_frame.can_flags.XLF) {
         return etl::unexpected(FrameParseError::CanXlNotSupported);

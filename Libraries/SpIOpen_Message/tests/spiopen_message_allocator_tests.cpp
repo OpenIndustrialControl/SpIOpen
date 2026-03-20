@@ -22,9 +22,9 @@ struct AllocatorHarness {
 #endif
     static constexpr size_t kCcBytes = BytesToAllocateForFramePool(kCcCount, format::CanMessageType::CanCc);
 #if MESSAGE_FRAME_POOL_SIZE_CONFIGURABLE
-    static constexpr size_t kFdCount = MESSAGE_CAN_FD_ENABLED ? 2U : 0U;
+    static constexpr size_t kFdCount = 2U;
 #else
-    static constexpr size_t kFdCount = MESSAGE_CAN_FD_ENABLED ? MESSAGE_FRAME_POOL_MAX_FD_FRAMES : 0U;
+    static constexpr size_t kFdCount = MESSAGE_FRAME_POOL_MAX_FD_FRAMES;
 #endif
     static constexpr size_t kFdBytes = BytesToAllocateForFramePool(kFdCount, format::CanMessageType::CanFd);
 #if MESSAGE_FRAME_POOL_SIZE_CONFIGURABLE
@@ -112,16 +112,9 @@ TEST(SpIOpen_Message_FrameAllocator, AllocateRoutesByPayloadSize) {
 
     {
         auto ret = harness.allocator.AllocateFrameMessage(9U, MessageType::MasterToSlave, nullptr, 0U);
-        if (MESSAGE_CAN_FD_ENABLED) {
-            ASSERT_TRUE(ret);
-            EXPECT_EQ(GetAllocatedMessageBufferSize(*ret), format::MAX_CAN_FD_FRAME_SIZE);
-            (*ret)->Release();
-        } else {
-            EXPECT_FALSE(ret);
-            if (!ret) {
-                EXPECT_EQ(ret.error(), FramePoolError::UnsupportedFrameSize);
-            }
-        }
+        ASSERT_TRUE(ret);
+        EXPECT_EQ(GetAllocatedMessageBufferSize(*ret), format::MAX_CAN_FD_FRAME_SIZE);
+        (*ret)->Release();
     }
 
     {
@@ -156,16 +149,9 @@ TEST(SpIOpen_Message_FrameAllocator, AllocateByTypeApis) {
     {
         auto ret = harness.allocator.AllocateFrameMessage(format::CanMessageType::CanFd, MessageType::MasterToSlave,
                                                           nullptr, 0U);
-        if (MESSAGE_CAN_FD_ENABLED) {
-            ASSERT_TRUE(ret);
-            EXPECT_EQ(GetAllocatedMessageBufferSize(*ret), format::MAX_CAN_FD_FRAME_SIZE);
-            (*ret)->Release();
-        } else {
-            EXPECT_FALSE(ret);
-            if (!ret) {
-                EXPECT_EQ(ret.error(), FramePoolError::UnsupportedFrameSize);
-            }
-        }
+        ASSERT_TRUE(ret);
+        EXPECT_EQ(GetAllocatedMessageBufferSize(*ret), format::MAX_CAN_FD_FRAME_SIZE);
+        (*ret)->Release();
     }
 
     {

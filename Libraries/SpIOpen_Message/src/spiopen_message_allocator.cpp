@@ -54,7 +54,7 @@ etl::expected<FramePoolConfig, LifecycleError> FrameMessageAllocator::ValidateAn
     const size_t min_frame_buffer_size = format::MAX_CAN_MESSAGE_FRAME_SIZE_BY_TYPE[type_index];
     const size_t max_message_count = MESSAGE_FRAME_POOL_MAX_FRAMES_BY_CAN_MESSAGE_TYPE[type_index];
     const bool is_type_enabled = (frame_type == format::CanMessageType::CanCc) ||
-                                 ((frame_type == format::CanMessageType::CanFd) && MESSAGE_CAN_FD_ENABLED) ||
+                                 (frame_type == format::CanMessageType::CanFd) ||
                                  ((frame_type == format::CanMessageType::CanXl) && MESSAGE_CAN_XL_ENABLED);
 
     if (effective_config.name == nullptr) {
@@ -110,7 +110,7 @@ FramePool* FrameMessageAllocator::SelectPoolForPayloadSize(size_t required_paylo
     if (required_payload_bytes <= format::MAX_CC_PAYLOAD_SIZE) {
         return &etl::get<kCcPoolIndex>(children);
     }
-    if (MESSAGE_CAN_FD_ENABLED && (required_payload_bytes <= format::MAX_FD_PAYLOAD_SIZE)) {
+    if (required_payload_bytes <= format::MAX_FD_PAYLOAD_SIZE) {
         return &etl::get<kFdPoolIndex>(children);
     }
     if (MESSAGE_CAN_XL_ENABLED && (required_payload_bytes <= format::MAX_XL_PAYLOAD_SIZE)) {
@@ -125,7 +125,7 @@ FramePool* FrameMessageAllocator::SelectPoolForCanMessageType(format::CanMessage
         case format::CanMessageType::CanCc:
             return &etl::get<kCcPoolIndex>(children);
         case format::CanMessageType::CanFd:
-            return MESSAGE_CAN_FD_ENABLED ? &etl::get<kFdPoolIndex>(children) : nullptr;
+            return &etl::get<kFdPoolIndex>(children);
         case format::CanMessageType::CanXl:
             return MESSAGE_CAN_XL_ENABLED ? &etl::get<kXlPoolIndex>(children) : nullptr;
         default:
