@@ -9,8 +9,12 @@
             "name": "SpIOpen Frame"
         },
         {
-            "path": "Libraries/SpIOpen_Broker",
-            "name": "SpIOpen Broker"
+            "path": "Libraries/SpIOpen_Lifecycle",
+            "name": "SpIOpen Lifecycle"
+        },
+        {
+            "path": "Libraries/SpIOpen_Message",
+            "name": "SpIOpen Message"
         }
     ],
     "settings": {}

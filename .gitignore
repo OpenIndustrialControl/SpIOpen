@@ -45,3 +45,6 @@ Libraries/SpIOpen_Frame/include/generated/autoconf.h
 /Libraries/SpIOpen_Frame/build-tests
 /Libraries/SpIOpen_Broker/build-tests
 /Libraries/SpIOpen_Broker/build
+/Libraries/SpIOpen_Lifecycle/build
+/Libraries/SpIOpen_Lifecycle/build-tests
+/Libraries/SpIOpen_Message/build

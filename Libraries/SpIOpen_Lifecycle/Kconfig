@@ -1,0 +1,10 @@
+menu "SpIOpen Lifecycle Library"
+
+config SPIOPEN_LIFECYCLE_ENABLE_AGGREGATE_COMPONENTS
+    bool "Enable aggregate lifecycle component interfaces"
+    default y
+    help
+        Enables IAggregateLifecycleComponent and related compile-time helpers
+        for composing lifecycle components from child components.
+
+endmenu
